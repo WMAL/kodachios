@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.1",
+  "id": "network-emergency-recovery",
+  "name": "network-emergency-recovery",
+  "description": "Emergency recovery: detect failure, recover internet, restart Tor, verify",
+  "metadata": {
+    "created": "2025-10-08T00:00:00Z",
+    "modified": "2026-07-08T02:25:00Z",
+    "version": "1.1"
+  },
+  "global_settings": {
+    "kill_policy": "continue",
+    "continue_policy": true,
+    "max_log_size": 10485760,
+    "default_timeout": 600,
+    "working_dir": "."
+  },
+  "steps": [
+    {
+      "id": 1,
+      "type": "command",
+      "cmd": "sudo health-control net-check --domain-only",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "info",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.health-control.net-check",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "net-check",
+        "--domain-only"
+      ],
+      "description": "Check network connectivity (IP ping, DNS, and HTTP probe)"
+    },
+    {
+      "id": 3,
+      "type": "command",
+      "cmd": "sudo health-control recover-internet --force",
+      "condition": {
+        "type": "if_not_contains",
+        "pattern": "DOMAIN_ONLY_CONNECTIVITY"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "recovery",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Recover internet connectivity",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.health-control.recover-internet",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "recover-internet",
+        "--force"
+      ],
+      "description": "Recover internet connectivity"
+    },
+    {
+      "id": 4,
+      "type": "command",
+      "cmd": "sudo tor-switch restart-tor",
+      "condition": {
+        "type": "if_not_contains",
+        "pattern": "DOMAIN_ONLY_CONNECTIVITY"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Restart Tor daemon",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "description": "Restart Tor daemon",
+      "command_id": "rust.tor-switch.restart-tor",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "restart-tor"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "command",
+      "cmd": "sudo health-control net-check --domain-only",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "info",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.health-control.net-check",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "net-check",
+        "--domain-only"
+      ],
+      "description": "Check network connectivity (IP ping, DNS, and HTTP probe)"
+    },
+    {
+      "id": 6,
+      "type": "command",
+      "cmd": "echo 'Emergency recovery successful'",
+      "condition": {
+        "type": "if_contains",
+        "pattern": "DOMAIN_ONLY_CONNECTIVITY"
+      },
+      "timeout": 10,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "recovery",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Review the step result and restore the prior state before continuing if the command changed system state."
+      },
+      "command_id": "workflow.argv.echo.69d1a28b9e427ea7",
+      "argv": [
+        "echo",
+        "Emergency recovery successful"
+      ],
+      "description": "Run the typed workflow command 'echo 'Emergency recovery successful''."
+    }
+  ]
+}

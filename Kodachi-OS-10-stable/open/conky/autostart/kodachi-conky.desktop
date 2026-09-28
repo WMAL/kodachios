@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Kodachi Conky
+Comment=Kodachi Desktop Status Panels
+GenericName=System Monitor
+Exec=/usr/bin/systemctl --user start conky-watchdog.service conky-snapshot-refresh.timer
+TryExec=/usr/bin/systemctl
+Terminal=false
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=5
+Categories=System;Monitor;
+Keywords=conky;monitor;system;status;privacy;security;
+StartupNotify=false

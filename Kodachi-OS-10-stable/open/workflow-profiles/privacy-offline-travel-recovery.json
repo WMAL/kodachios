@@ -1,0 +1,224 @@
+{
+  "schema_version": "1.1",
+  "id": "privacy-offline-travel-recovery",
+  "name": "privacy-offline-travel-recovery",
+  "description": "Explicitly restore peripherals and connectivity after travel.",
+  "metadata": {
+    "created": "2026-07-16T00:00:00Z",
+    "modified": "2026-07-16T00:00:00Z",
+    "author": "Kodachi ColonyOps",
+    "version": "1.0"
+  },
+  "global_settings": {
+    "kill_policy": "stop",
+    "continue_policy": false,
+    "max_log_size": 10485760,
+    "default_timeout": 300,
+    "working_dir": "."
+  },
+  "steps": [
+    {
+      "type": "command",
+      "cmd": "sudo health-control offline-usb-storage --action enable",
+      "description": "Manage USB storage devices",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "binaries",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Manage USB storage devices",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "id": 1,
+      "command_id": "rust.health-control.offline-usb-storage",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "offline-usb-storage",
+        "--action",
+        "enable"
+      ]
+    },
+    {
+      "type": "command",
+      "cmd": "sudo health-control offline-webcam --action enable",
+      "description": "Manage webcam device",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "binaries",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Manage webcam device",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "id": 2,
+      "command_id": "rust.health-control.offline-webcam",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "offline-webcam",
+        "--action",
+        "enable"
+      ]
+    },
+    {
+      "type": "command",
+      "cmd": "sudo health-control offline-microphone --action enable",
+      "description": "Manage microphone device",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "binaries",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Manage microphone device",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "id": 3,
+      "command_id": "rust.health-control.offline-microphone",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "offline-microphone",
+        "--action",
+        "enable"
+      ]
+    },
+    {
+      "type": "command",
+      "cmd": "sudo health-control offline-bluetooth --action enable",
+      "description": "Enable/disable/check Bluetooth service",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "binaries",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Enable/disable/check Bluetooth service",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "id": 4,
+      "command_id": "rust.health-control.offline-bluetooth",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "offline-bluetooth",
+        "--action",
+        "enable"
+      ]
+    },
+    {
+      "type": "command",
+      "cmd": "sudo health-control offline-wifi --action enable",
+      "description": "Manage WiFi connectivity",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "binaries",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Manage WiFi connectivity",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "id": 5,
+      "command_id": "rust.health-control.offline-wifi",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "offline-wifi",
+        "--action",
+        "enable"
+      ]
+    },
+    {
+      "type": "command",
+      "cmd": "sudo health-control recover-internet --check-dns",
+      "description": "Recover internet connectivity",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "binaries",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Recover internet connectivity",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "id": 6,
+      "command_id": "rust.health-control.recover-internet",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "recover-internet",
+        "--check-dns"
+      ]
+    }
+  ]
+}

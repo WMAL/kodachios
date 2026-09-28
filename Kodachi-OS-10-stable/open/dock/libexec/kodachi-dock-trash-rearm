@@ -1,0 +1,649 @@
+#!/usr/bin/env python3
+# Kodachi Dock Control - re-arm the dock's trash monitor
+#
+# SPDX-License-Identifier: LicenseRef-Kodachi-SAN-1.1
+# Copyright (c) 2013-2026 Warith Al Maawali
+#
+# This file is part of Kodachi OS.
+# For full license terms, see LICENSE.md or visit:
+# https://kodachi.cloud/docs/license.html
+#
+# Commercial or organizational use requires a written license.
+# Contact: warith@digi77.com
+#
+"""Re-arm the dock's recycle-bin monitor when its gvfs backend has been replaced.
+
+THE DEFECT THIS CLOSES. cairo-dock's ``dustbin`` applet owns no trash code. At
+start it asks the desktop-environment backend (xfce-integration, gvfs-based) for
+the trash path, gets the URI ``trash://``, and puts ONE GIO directory monitor on
+it. That monitor is served by the gvfs backend process ``gvfsd-trash`` over a
+private unix socket. ``gvfsd-trash`` lives in gvfs-daemon.service's cgroup, so
+every restart or kill of gvfsd takes the backend with it, the monitor dies with
+the socket, and the applet neither notices nor retries: it has no reconnect path,
+its 10 s polling fallback is armed ONLY when the monitor could not be created at
+start, and it logs nothing. The icon then stays on whichever image it last drew,
+however much lands in the trash. Measured on the operator's PC on 2026-09-13:
+gvfsd was restarted at 17:34 and 18:47, the dock kept a socket whose peer inode
+read 0, and 34G moved into the trash at 19:26 left the icon on the empty
+wastebasket. Reproduced in isolation three times under a private session bus
+(Kodachi-Dock-Playbook § 43.1).
+
+THE RE-ARM. cairo-dock's own D-Bus interface, org.cairodock.CairoDock, offers
+``Reload(query)``. ``Reload("module=dustbin")`` stops and restarts the applet,
+which creates a fresh monitor through the live gvfsd; a new monitor in the same
+process recovers even after BOTH gvfsd and gvfsd-trash were replaced (probe 3 of
+the same day). No dock restart, no visible effect beyond the icon redrawing.
+
+THE CHECK, which is what decides. A live monitor is a unix socket in the dock
+whose peer belongs to a ``gvfsd-trash`` process. ``ss -xp`` shows both ends for
+the calling user's own processes without privilege, so linked-or-not is one read
+of that table. The helper acts only when the dock is running, is older than a few
+seconds (a fresh dock is still arming itself), ss attributed at least one socket
+to the dock (a blind table must never be read as "unlinked"), and no dock socket
+peers a gvfsd-trash socket.
+
+THIS RUNS ONCE A MINUTE FOR THE LIFE OF A LOGIN, SO EVERY WAY OF FAILING MUST BE
+BOUNDED. Two inspector rounds were spent on exactly this and the second one found
+the half the first fix missed, so the rule is stated once here and applied to
+EVERY outcome below, not only to the interesting one:
+
+    no tick may take an action, write a journal record, or return non-zero more
+    than MAX_ATTEMPTS times in a row for one dock before the helper goes quiet.
+
+  1. THE APPLET MAY LEGITIMATELY NOT BE THERE. ``dustbin`` sits in ``modules=`` by
+     default, but that file is per-user and cairo-dock rewrites it, so a user who
+     removes the Trash cell has no dustbin instance and therefore no trash socket
+     FOREVER. Before reloading, ask the dock whether the applet exists:
+     ``GetProperties("module=dustbin")`` returns a populated array for a live
+     applet and an EMPTY array for a module that is not instantiated (measured
+     against `clock` and `weather`, which are not in this theme's ``modules=``).
+  2. A RE-ARM THAT NEVER TAKES MUST STOP TRYING. Consecutive failures are counted
+     in a state file under $XDG_RUNTIME_DIR keyed by the dock's pid; after
+     MAX_ATTEMPTS the helper backs off for QUIET_S and says so. A new dock pid, or
+     one success, clears the state.
+  3. A BROKEN INSTALL COUNTS TOO, AND THIS IS THE HALF THE FIRST FIX MISSED. If
+     ``ss`` cannot run, python3-gi is absent, the dock's bus name is gone, or
+     ``Reload`` itself times out, the helper cannot repair anything, so retrying
+     every 60 s buys nothing and costs a failed unit plus two journal records per
+     minute, for the life of the login, with a ``Reload`` still being delivered in
+     the call-timeout case. Every one of those paths now goes through
+     ``bounded_failure()`` and is capped by the same counter.
+  4. A COUNTER THAT CANNOT BE PERSISTED CANNOT BOUND ANYTHING, so the helper does
+     not act at all when its state file is unwritable: it says so once and returns
+     0 rather than reloading forever with a counter that resets every tick.
+  5. THE BACKOFF GATE RUNS BEFORE ``ss``. It needs only the /proc walk, so a
+     backing-off tick spawns no subprocess and writes nothing.
+
+THE TIME BUDGET. ``WORST_CASE_S`` is the sum of the steps that carry an EXPLICIT
+bound: two ``ss`` runs at SS_TIMEOUT_S and two D-Bus calls at DBUS_TIMEOUT_MS,
+plus the settle. It is NOT the whole wall clock: ``Gio.bus_get_sync`` takes no
+timeout (it connects to a local unix socket, so it is bounded in practice but not
+by us) and the /proc walks are unbounded in principle. That is a reason the unit's
+TimeoutStartSec is double WORST_CASE_S rather than a hair above it, and
+test_the_unit_budget_exceeds_the_helpers_own_worst_case enforces the margin while
+test_the_helper_makes_only_the_blocking_calls_the_budget_assumes counts the calls
+so a third one cannot be added silently.
+
+Exit status: 0 for every ordinary outcome, including a re-arm that did not take
+once the helper has given up on this dock, "the applet is not there", and any
+capped failure after the cap is reached. 1 while a re-arm is still being retried.
+2 for a broken install (``ss`` unusable, python3-gi missing, the bus name
+unreachable) while it is still being retried. Both 1 and 2 stop once the cap is
+reached, so neither can outlive MAX_ATTEMPTS ticks for one dock.
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+DOCK_COMM = "cairo-dock"
+BACKEND_COMM = "gvfsd-trash"
+BUS_NAME = "org.cairodock.CairoDock"
+OBJECT_PATH = "/org/cairodock/CairoDock"
+APPLET_QUERY = "module=dustbin"
+RELOAD_QUERY = APPLET_QUERY
+
+# A dock younger than this is still creating its own monitor; leave it alone.
+MIN_DOCK_AGE_S = 20.0
+# How long a reload gets to mount trash:// and connect before the re-check.
+SETTLE_S = 5.0
+# The two calls that can block on something outside this process.
+SS_TIMEOUT_S = 10.0
+DBUS_TIMEOUT_MS = 10000
+# The sum of the EXPLICITLY bounded steps only: ss twice (before and after), two
+# D-Bus calls (GetProperties then Reload), and the settle between them. See the
+# time-budget paragraph in the module docstring for what this deliberately does
+# NOT cover.
+WORST_CASE_S = 2 * SS_TIMEOUT_S + 2 * (DBUS_TIMEOUT_MS / 1000.0) + SETTLE_S
+# How many blocking calls of each kind that sum assumes, asserted by the suite so
+# a third one cannot be added without the budget moving with it.
+EXPECTED_SS_CALLS = 2
+EXPECTED_DBUS_CALLS = 2
+
+# Consecutive failed ticks for one dock pid before backing off. Applies to every
+# failure mode, not only to a re-arm that did not take.
+MAX_ATTEMPTS = 3
+# How long to stay quiet after giving up, or after finding no dustbin applet.
+QUIET_S = 3600.0
+STATE_BASENAME = "kodachi-dock-trash-rearm.state"
+
+# One `ss -xp` row for a connected unix socket. The local column is `*` for an
+# unnamed client socket and a filesystem path for a named server socket, and the
+# gvfsd-trash side is the NAMED one, so a parser that expects `*` on both sides
+# drops exactly the rows this helper exists to find (that mistake was made and
+# measured while writing it). The peer column is always `*`: verified against
+# this machine's live table, 539 of 539 rows carrying `users:(`.
+SS_ROW = re.compile(
+    r"^u_\w+\s+\S+\s+\d+\s+\d+\s+(?P<local>\S+)\s+(?P<lino>\d+)\s+\*\s+(?P<pino>\d+)"
+    r"\s+users:\((?P<users>.*)\)\s*$")
+PROC_REF = re.compile(r'\("(?P<comm>[^"]+)",pid=(?P<pid>\d+),fd=(?P<fd>\d+)\)')
+
+
+class Broken(Exception):
+    """A broken install rather than a state this helper is meant to repair."""
+
+
+# ── output ───────────────────────────────────────────────────────────────
+#
+# THE HEALTHY PATH PRINTS NOTHING, AND A LOG LEVEL WILL NOT DO IT FOR YOU. This
+# runs once a minute for the life of every graphical session, so an unconditional
+# status line is a persistent journal record a minute, about 1440 a day per
+# session, for a check whose answer is almost always "nothing to do".
+#
+# The first attempt at this emitted routine status with a `<7>` debug prefix and
+# relied on the unit's LogLevelMax=notice to drop it. MEASURED on systemd 257
+# (Debian 13), user unit, one tick, cursor-bounded:
+#
+#     LogLevelMax=debug    11 journal lines  (systemd's own About to execute /
+#                                             Forked / Starting / Executing /
+#                                             Finished, plus our line)
+#     LogLevelMax=notice    1 journal line   (ours, at PRIORITY=7)
+#
+# So LogLevelMax does real work, ten lines of it, on the messages SYSTEMD
+# generates about the unit, and it does NOT drop a `<N>`-prefixed line the
+# service writes to stdout: journald stores that line at the prefixed priority
+# regardless. A debug prefix is therefore not a filter, and the only reliable way
+# to write nothing is to write nothing. The unit keeps LogLevelMax=notice for the
+# ten lines it does suppress.
+#
+# Everything that DOES reach the journal is an event worth finding later, so
+# emit() tags it notice. The prefix goes out only when systemd is capturing our
+# output (it sets JOURNAL_STREAM), so an interactive `--check` prints clean text.
+
+def _under_systemd():
+    return "JOURNAL_STREAM" in os.environ
+
+
+def emit(message):
+    sys.stdout.write(("<5>" if _under_systemd() else "") + message + "\n")
+    sys.stdout.flush()
+
+
+# ── observation ──────────────────────────────────────────────────────────
+
+def own_pids(comm):
+    """PIDs of this user's processes whose comm is exactly `comm`, ASCENDING.
+
+    Sorted because the first element keys the retry state. `os.listdir("/proc")`
+    order is not defined, so with two cairo-dock processes for one user an
+    unsorted list can flip between ticks, which would make the state key flip,
+    reset the counter every time and defeat the cap.
+    """
+    uid = os.getuid()
+    found = []
+    for name in os.listdir("/proc"):
+        if not name.isdigit():
+            continue
+        try:
+            if os.stat("/proc/" + name).st_uid != uid:
+                continue
+            with open("/proc/%s/comm" % name, encoding="utf-8", errors="replace") as fh:
+                if fh.read().strip() != comm:
+                    continue
+        except OSError:
+            continue
+        found.append(int(name))
+    return sorted(found)
+
+
+def process_age_s(pid):
+    """Seconds since the process started, from /proc/<pid>/stat field 22."""
+    with open("/proc/%d/stat" % pid, encoding="utf-8", errors="replace") as fh:
+        stat = fh.read()
+    # comm can hold spaces and parentheses; every field after the last ')' is
+    # fixed. state is field 3, starttime is field 22, so it is index 19 here.
+    fields = stat[stat.rindex(")") + 2:].split()
+    start_ticks = int(fields[19])
+    with open("/proc/uptime", encoding="utf-8") as fh:
+        uptime = float(fh.read().split()[0])
+    return uptime - start_ticks / os.sysconf("SC_CLK_TCK")
+
+
+def dock_processes():
+    """(pids, ages) for this user's docks. Pure /proc: no subprocess, cannot raise
+    Broken, so the backoff gate can run before anything expensive."""
+    pids = own_pids(DOCK_COMM)
+    ages = []
+    for pid in pids:
+        try:
+            ages.append(process_age_s(pid))
+        except (OSError, ValueError, IndexError):
+            # Unreadable: treat as old and let the socket check decide, rather
+            # than blocking a real re-arm on a /proc read.
+            ages.append(MIN_DOCK_AGE_S)
+    return pids, ages
+
+
+def read_ss():
+    try:
+        done = subprocess.run(["ss", "-xp"], capture_output=True, text=True,
+                              timeout=SS_TIMEOUT_S)
+    except FileNotFoundError as exc:
+        raise Broken("ss is not installed (iproute2): %s" % exc) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise Broken("ss did not finish within %.0fs" % SS_TIMEOUT_S) from exc
+    if done.returncode != 0:
+        raise Broken("ss exited %d: %s" % (done.returncode, done.stderr.strip()[:200]))
+    return done.stdout
+
+
+def parse_ss(text):
+    """Connected unix sockets as {local, peer, procs:[(comm, pid, fd)]}."""
+    rows = []
+    for line in text.splitlines():
+        match = SS_ROW.match(line)
+        if not match:
+            continue
+        procs = [(p.group("comm"), int(p.group("pid")), int(p.group("fd")))
+                 for p in PROC_REF.finditer(match.group("users"))]
+        rows.append({"local": int(match.group("lino")),
+                     "peer": int(match.group("pino")),
+                     "procs": procs})
+    return rows
+
+
+def link_state(rows, dock_pids, backend_pids):
+    """Is any dock socket connected to a gvfsd-trash socket?
+
+    dock_rows counts sockets ss attributed to the dock at all (the dock always
+    holds X11 and D-Bus sockets, so zero means ss could not see the dock, not
+    that the dock has none). links lists (dock pid, dock fd, peer inode) pairs.
+    """
+    dock_pids = set(dock_pids)
+    backend_pids = set(backend_pids)
+    dock_rows = [r for r in rows if any(pid in dock_pids for _, pid, _ in r["procs"])]
+    backend_locals = {r["local"] for r in rows if any(pid in backend_pids for _, pid, _ in r["procs"])}
+    links = [(pid, fd, r["peer"]) for r in dock_rows for _, pid, fd in r["procs"]
+             if pid in dock_pids and r["peer"] in backend_locals]
+    return {"dock_rows": len(dock_rows), "backend_rows": len(backend_locals), "links": links}
+
+
+def observe():
+    """The full read: dock processes plus the socket table. Raises Broken."""
+    dock_pids, ages = dock_processes()
+    state = link_state(parse_ss(read_ss()), dock_pids, own_pids(BACKEND_COMM))
+    return dock_pids, ages, state
+
+
+# ── persisted retry state ────────────────────────────────────────────────
+
+def state_path():
+    """Where the retry counter lives.
+
+    $XDG_RUNTIME_DIR is per-user, tmpfs, mode 0700, and cleared when the last
+    session of that user ends, which is exactly the lifetime this counter should
+    have. Every systemd user session sets it. The /tmp fallback exists only for a
+    hand-run outside a session; it is uid-qualified so two users cannot collide,
+    and load_state refuses a file that is not ours, because /tmp is world-writable
+    and a pre-created foreign file could otherwise hand us an arbitrary
+    quiet_until or make every write fail.
+    """
+    base = os.environ.get("XDG_RUNTIME_DIR")
+    if base:
+        return os.path.join(base, STATE_BASENAME)
+    return "/tmp/%s.%d" % (STATE_BASENAME, os.getuid())
+
+
+def load_state():
+    clean = {"dock_pid": 0, "fails": 0, "quiet_until": 0.0}
+    path = state_path()
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        return clean
+    # THE fd MUST BE CLOSED ON EVERY PATH, and an early `return` inside the try
+    # below does not do it: only the os.fdopen arm did, so the foreign-uid branch
+    # and any fstat error leaked one descriptor per call (measured: 50 calls on
+    # that branch leaked 50, against 0 on the owned-file control). Harmless in the
+    # shipped process, which calls this once and exits, and wrong anyway.
+    adopted = False
+    try:
+        if os.fstat(fd).st_uid != os.getuid():
+            # Somebody else's file in a shared directory: never trust its numbers.
+            return clean
+        fh = os.fdopen(fd, encoding="utf-8")
+        adopted = True                      # fdopen owns the fd from here
+        with fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+        return {"dock_pid": int(data.get("dock_pid", 0)),
+                "fails": int(data.get("fails", 0)),
+                "quiet_until": float(data.get("quiet_until", 0.0))}
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        # A missing or corrupt state file must never stop a re-arm: start clean.
+        return clean
+    finally:
+        if not adopted:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def save_state(state):
+    """Persist the counter. Returns True on success.
+
+    THE RETURN VALUE IS LOAD-BEARING. A counter that cannot be written cannot
+    bound anything: `fails` would be re-derived as 1 on every tick and the cap
+    would never be reached, so a helper that ignored this would reload the applet
+    and fail its unit every 60 s forever, which is the exact runaway the cap
+    exists to prevent. Callers refuse to act when this returns False.
+    """
+    path = state_path()
+    tmp = path + ".new"
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(state, fh)
+        os.replace(tmp, path)
+        return True
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False
+
+
+def fresh_state(dock_pid):
+    return {"dock_pid": dock_pid, "fails": 0, "quiet_until": 0.0}
+
+
+def can_persist():
+    """Can the counter be written? Answered WITHOUT rewriting the real state file.
+
+    main() asks this on every tick that gets past the backoff check, so using
+    save_state() here would rewrite the state file about 1440 times a day. The
+    cost is nil on a tmpfs and the CONFUSION is not: a state file whose mtime is
+    always under a minute old reads as "a failure was just recorded", which is
+    exactly the wrong thing for the file a human inspects when the icon is stuck.
+    A probe beside it answers the same question and leaves the real file's mtime
+    meaning what it says.
+    """
+    probe = state_path() + ".probe"
+    try:
+        with open(probe, "w", encoding="utf-8") as fh:
+            fh.write("{}")
+        os.unlink(probe)
+        return True
+    except OSError:
+        return False
+
+
+def _state_writability():
+    """One line for `--check`, because a timed tick handles an unwritable state
+    directory SILENTLY (it must, or it reports the same thing every minute) and a
+    human would otherwise have no way to see why nothing is happening."""
+    path = state_path()
+    if can_persist():
+        return "%s is writable" % path
+    return ("%s is NOT writable: every timed tick will do nothing and stay silent "
+            "until this is fixed" % path)
+
+
+def backoff_active(retry, dock_pids, now=None):
+    """Is this dock inside a backoff window? Needs no subprocess, so it can gate
+    the `ss` run rather than following it."""
+    if retry is None or not dock_pids:
+        return False
+    if retry["dock_pid"] != dock_pids[0]:
+        return False
+    now = time.time() if now is None else now
+    return now < retry["quiet_until"]
+
+
+# ── decision ─────────────────────────────────────────────────────────────
+
+def decide(dock_pids, dock_ages, state, retry=None, now=None):
+    """Pure decision: ('skip' | 'reload', reason).
+
+    `retry` is the persisted counter (None means "no cap", used by --check).
+    """
+    if not dock_pids:
+        return "skip", "no cairo-dock process for this user, nothing to re-arm"
+    young = [age for age in dock_ages if age < MIN_DOCK_AGE_S]
+    if young:
+        return "skip", "dock started %.0fs ago and is still arming itself" % min(young)
+    if state["dock_rows"] == 0:
+        return "skip", "ss attributed no socket to the dock, refusing to act on a blind reading"
+    if state["links"]:
+        pid, fd, peer = state["links"][0]
+        return "skip", "trash monitor linked: dock %d fd %d peers gvfsd-trash socket %d" % (pid, fd, peer)
+    if backoff_active(retry, dock_pids, now):
+        now = time.time() if now is None else now
+        return "skip", ("backing off for another %.0fs after %d unsuccessful attempt(s) "
+                        "on dock %d" % (retry["quiet_until"] - now, retry["fails"], dock_pids[0]))
+    return "reload", ("dock holds no socket to any gvfsd-trash process "
+                      "(%d gvfsd-trash socket(s) visible): its trash monitor is dead" % state["backend_rows"])
+
+
+def bounded_failure(retry, message, rc):
+    """Report a failure ONCE PER ATTEMPT and stop after MAX_ATTEMPTS.
+
+    EVERY FAILING EXIT OF A TIMED TICK goes through here: the re-arm that did not
+    take, and the broken-install ones (ss unusable, python3-gi absent, the bus
+    name gone, Reload timing out). The argument-parse `return 2` in main() does
+    NOT, and does not need to: the unit passes no arguments, so nothing the timer
+    runs can reach it. That sentence is written narrowly on purpose, because an
+    absolute one here was itself a finding.
+
+    THREE INSPECTOR ROUNDS SHAPED THIS, each finding the same runaway by a new
+    route. Round one rejected an unbounded retry. The cap written to close it
+    covered only "the re-arm did not take", so round two found three `return 2`
+    branches still producing a failed unit and two journal records a minute.
+    Round three found that the counter written HERE ignored whether it had
+    actually been persisted: with an unwritable state directory `fails` was
+    re-derived as 1 on every tick, the cap could never be reached, and the unit
+    failed once a minute for the life of the login. main() now proves the state
+    file is writable BEFORE anything that could repeat, and this function checks
+    the return too, because a directory can become unwritable between the two.
+    """
+    if retry is None:                       # --check: report, never persist
+        emit(message)
+        return rc
+    retry["fails"] += 1
+    if retry["fails"] >= MAX_ATTEMPTS:
+        retry["quiet_until"] = time.time() + QUIET_S
+        if not save_state(retry):
+            return _unpersistable(message)
+        emit("%s; giving up after %d attempt(s) and staying quiet for %.0fs. The recycle-bin "
+             "icon will not follow the trash until this is fixed or the dock is restarted: "
+             "systemctl --user restart kodachi-dock.service" % (message, retry["fails"], QUIET_S))
+        return 0
+    if not save_state(retry):
+        return _unpersistable(message)
+    emit("%s (attempt %d of %d)" % (message, retry["fails"], MAX_ATTEMPTS))
+    return rc
+
+
+def _unpersistable(message):
+    """The counter could not be written, so this tick must not report a failure it
+    would repeat forever. Say what happened once, exit 0 so the unit is not left
+    failed, and let main()'s writability gate keep every later tick silent until
+    the directory is fixed."""
+    emit("%s; and the retry counter could not be written to %s, so this will not be retried "
+         "or reported again until that is fixed" % (message, state_path()))
+    return 0
+
+
+# ── the dock's D-Bus interface ───────────────────────────────────────────
+
+def _bus():
+    try:
+        import gi
+        gi.require_version("Gio", "2.0")
+        gi.require_version("GLib", "2.0")
+        from gi.repository import Gio, GLib
+    except (ImportError, ValueError) as exc:
+        raise Broken("python3-gi is missing or unusable (%s: %s)" % (type(exc).__name__, exc)) from exc
+    try:
+        # NOT covered by DBUS_TIMEOUT_MS, which applies to call_sync only. This
+        # connects to a local unix socket, so it is bounded in practice and not
+        # by us; it is one of the reasons the unit's budget is double
+        # WORST_CASE_S rather than a hair above it.
+        return Gio.bus_get_sync(Gio.BusType.SESSION, None), Gio, GLib
+    except Exception as exc:  # noqa: BLE001  (GLib.Error and friends)
+        raise Broken("cannot reach the session bus (%s: %s)" % (type(exc).__name__, exc)) from exc
+
+
+def _call(method, query):
+    bus, Gio, GLib = _bus()
+    try:
+        return bus.call_sync(BUS_NAME, OBJECT_PATH, BUS_NAME, method,
+                             GLib.Variant("(s)", (query,)), None,
+                             Gio.DBusCallFlags.NONE, DBUS_TIMEOUT_MS, None)
+    except Exception as exc:  # noqa: BLE001
+        # SEPARATE DIAGNOSES, because one fixed message for every failure is the
+        # defect class this project keeps finding: name the method and the real
+        # exception rather than always blaming an absent bus name.
+        raise Broken("%s(%r) on %s failed (%s: %s)" % (
+            method, query, BUS_NAME, type(exc).__name__, exc)) from exc
+
+
+def applet_is_present():
+    """True when the dustbin applet is instantiated in the running dock.
+
+    GetProperties returns one entry per matching icon/instance for a live applet
+    and an EMPTY array for a module that is not loaded, so this distinguishes
+    "the monitor died" from "the user removed the Trash cell".
+    """
+    reply = _call("GetProperties", APPLET_QUERY)
+    (entries,) = reply.unpack()
+    return bool(entries)
+
+
+def reload_applet():
+    _call("Reload", RELOAD_QUERY)
+
+
+# ── main ─────────────────────────────────────────────────────────────────
+
+def main(argv):
+    check_only = "--check" in argv
+    unknown = [a for a in argv if a != "--check"]
+    if unknown:
+        sys.stderr.write("usage: kodachi-dock-trash-rearm [--check]\n")
+        return 2
+
+    # THE CHEAP GATE FIRST. dock_processes() is a /proc walk with no subprocess
+    # and no bus, so a backing-off tick and a no-dock tick cost that and nothing
+    # else: no `ss`, no D-Bus, no journal record.
+    dock_pids, ages = dock_processes()
+    retry = None if check_only else load_state()
+    if retry is not None and dock_pids and retry["dock_pid"] != dock_pids[0]:
+        # A different dock: whatever we learned about the old one is void.
+        retry = fresh_state(dock_pids[0])
+    if not check_only and (not dock_pids or backoff_active(retry, dock_pids)):
+        return 0
+
+    # A COUNTER THAT CANNOT BE WRITTEN CANNOT BOUND ANYTHING, so prove the state
+    # file is writable BEFORE the first step that could repeat. This gate used to
+    # sit just before the Reload, which left the `ss`-failure path upstream of it:
+    # with an unwritable $XDG_RUNTIME_DIR and an unusable `ss`, `fails` was
+    # re-derived as 1 every tick, the cap was never reached, and the unit failed
+    # and wrote a record once a minute for the life of the login. That is the same
+    # runaway two earlier rounds were about, reached by a third route, and it is
+    # why this is the FIRST thing a timed tick does after deciding it might act.
+    #
+    # It PROBES rather than writing the real state, because this runs on every
+    # tick: save_state() here rewrote the state file about 1440 times a day, so
+    # its mtime was always under a minute old and read as "a failure was just
+    # recorded" to anyone inspecting it. Silence is deliberate too: a broken
+    # runtime directory is not this helper's to report once a minute, and
+    # `--check` prints it for a human who looks.
+    if not check_only and not can_persist():
+        return 0
+
+    try:
+        dock_pids, ages, state = observe()
+    except Broken as exc:
+        if check_only:
+            # --check REPORTS, it never fails: a broken install is a finding to
+            # print, not an exit code, and the name of its contract says "always
+            # exits zero".
+            print("dock=%s: cannot measure the dock's sockets: %s"
+                  % (",".join(str(p) for p in dock_pids) or "-", exc))
+            print("state file: %s" % _state_writability())
+            return 0
+        return bounded_failure(retry, "cannot measure the dock's sockets: %s" % exc, 2)
+
+    action, reason = decide(dock_pids, ages, state, retry)
+    status = "dock=%s backend_sockets=%d dock_sockets=%d links=%d decision=%s: %s" % (
+        ",".join(str(p) for p in dock_pids) or "-", state["backend_rows"],
+        state["dock_rows"], len(state["links"]), action, reason)
+
+    if check_only:
+        print(status)
+        # The one thing a timed tick handles silently and a human cannot see.
+        print("state file: %s" % _state_writability())
+        return 0
+    if action != "reload":
+        # SILENCE IS THE FIX, not a log level: see the emit() note above. A
+        # healthy or backing-off tick writes nothing at all, so the journal cost
+        # of this timer at rest is zero records rather than 1440 a day.
+        return 0
+
+    # SECOND LINE OF DEFENCE, not the first. The gate above already refused this
+    # tick if the counter was unwritable; this covers a directory that filled or
+    # went read-only in the milliseconds since, so the Reload still cannot go out
+    # with a counter that would reset on the next tick.
+    if not save_state(retry):
+        emit("cannot persist the retry counter to %s, so this tick will not act: an unbounded "
+             "retry is worse than a stale icon. Fix the runtime directory and it resumes by "
+             "itself." % state_path())
+        return 0
+
+    emit(status)
+    try:
+        if not applet_is_present():
+            retry["quiet_until"] = time.time() + QUIET_S
+            save_state(retry)
+            emit("no dustbin applet in this dock (the Trash cell is not in the layout): "
+                 "nothing to re-arm, quiet for %.0fs" % QUIET_S)
+            return 0
+        reload_applet()
+    except Broken as exc:
+        return bounded_failure(retry, "re-arm FAILED: %s" % exc, 2)
+
+    time.sleep(SETTLE_S)
+    try:
+        dock_pids, ages, state = observe()
+    except Broken as exc:
+        return bounded_failure(retry, "re-arm sent but the re-check could not run: %s" % exc, 2)
+
+    if state["links"]:
+        pid, fd, peer = state["links"][0]
+        save_state(fresh_state(pid))
+        emit("re-armed: dock %d fd %d now peers gvfsd-trash socket %d" % (pid, fd, peer))
+        return 0
+
+    return bounded_failure(
+        retry, "re-arm attempted but the dock still holds no gvfsd-trash socket after %.0fs"
+        % SETTLE_S, 1)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

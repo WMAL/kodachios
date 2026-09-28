@@ -1,0 +1,241 @@
+{
+  "schema_version": "1.1",
+  "id": "base-recovery-sequence",
+  "name": "base-recovery-sequence",
+  "description": "Base profile: Standard recovery sequence (disconnect, recover, reset, recover-internet, verify connectivity). Include this for network recovery workflows. Designed to restore network connectivity after failures or panic modes.",
+  "metadata": {
+    "created": "2025-10-20T00:00:00Z",
+    "modified": "2025-10-20T00:00:00Z",
+    "version": "1.0"
+  },
+  "global_settings": {
+    "kill_policy": "continue",
+    "continue_policy": true,
+    "max_log_size": 10485760,
+    "default_timeout": 300,
+    "working_dir": "."
+  },
+  "steps": [
+    {
+      "id": 1,
+      "type": "command",
+      "cmd": "sudo routing-switch disconnect",
+      "description": "Disconnect the current proxy connection and restore normal routing",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 240,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "routing",
+      "score_impact": -2,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Disconnect the current proxy connection and restore normal routing",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.routing-switch.disconnect",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/routing-switch",
+        "disconnect"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "command",
+      "cmd": "sudo routing-switch recover",
+      "description": "Diagnose and repair a half-broken routing state (cleanup, route restore, DNS reset). The 'my internet is stuck' command. Auth-exempt",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "routing",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Diagnose and repair a half-broken routing state (cleanup, route restore, DNS reset). The 'my internet is stuck' command. Auth-exempt",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.routing-switch.recover",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/routing-switch",
+        "recover"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "command",
+      "cmd": "sudo routing-switch reset",
+      "description": "Reset all routing to the system default state. DESTRUCTIVE: drops the active tunnel, so you are back on the clear net afterwards. Auth-exempt on purpose (it must work when the network is down)",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 600,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "routing",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "critical",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": true,
+        "workflow_safe": false,
+        "shell_safe": true,
+        "confirm_copy": "Confirm 'RUN {id}' before this step: Reset all routing to the system default state. DESTRUCTIVE: drops the active tunnel, so you are back on the clear net afterwards. Auth-exempt on purpose (it must work when the network is down)",
+        "rollback_hint": "Use a verified backup or the operation-specific recovery workflow; effects may be irreversible."
+      },
+      "command_id": "rust.routing-switch.reset",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/routing-switch",
+        "reset"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "command",
+      "cmd": "sudo health-control recover-internet --force",
+      "description": "Recover internet connectivity",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "recovery",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Recover internet connectivity",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.health-control.recover-internet",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "recover-internet",
+        "--force"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "command",
+      "cmd": "sudo health-control net-check --domain-only",
+      "description": "Check network connectivity (IP ping, DNS, and HTTP probe)",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "info",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.health-control.net-check",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "net-check",
+        "--domain-only"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "command",
+      "cmd": "ip-fetch check-tor",
+      "description": "Check if connection is using Tor network",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.ip-fetch.check-tor",
+      "argv": [
+        "/opt/kodachi/dashboard/hooks/ip-fetch",
+        "check-tor"
+      ]
+    },
+    {
+      "id": 7,
+      "type": "command",
+      "cmd": "ip-fetch",
+      "description": "Fetch IP geolocation information (default command)",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "info",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "low",
+        "requires_auth": true,
+        "needs_sudo": false,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.ip-fetch.fetch",
+      "argv": [
+        "/opt/kodachi/dashboard/hooks/ip-fetch"
+      ]
+    }
+  ]
+}

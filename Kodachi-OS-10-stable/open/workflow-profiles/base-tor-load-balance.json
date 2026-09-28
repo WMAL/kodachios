@@ -1,0 +1,195 @@
+{
+  "schema_version": "1.1",
+  "id": "base-tor-load-balance",
+  "name": "base-tor-load-balance",
+  "description": "Base profile: Load-balanced Tor torrification with parametrized firewall backend. Creates multiple Tor instances and distributes traffic using selected load balancing algorithm.",
+  "metadata": {
+    "created": "2025-10-22T00:00:00Z",
+    "modified": "2025-10-22T00:00:00Z",
+    "version": "1.0"
+  },
+  "global_settings": {
+    "kill_policy": "stop",
+    "continue_policy": true,
+    "max_log_size": 10485760,
+    "default_timeout": 300,
+    "working_dir": "."
+  },
+  "prerequisites": {
+    "required": [
+      {
+        "check": "state.authenticated",
+        "expect": true,
+        "error": "Authentication required for load-balanced Tor setup"
+      },
+      {
+        "check": "state.online",
+        "expect": true,
+        "error": "Internet connectivity required"
+      }
+    ],
+    "optional": [
+      {
+        "check": "state.torrify",
+        "expect": false,
+        "error": "WARNING: System already torrified - continuing anyway"
+      }
+    ],
+    "on_failure": "abort"
+  },
+  "includes": [
+    "base-tor-multiinstance-setup"
+  ],
+  "parameters": {
+    "firewall": {
+      "type": "choice",
+      "description": "Firewall backend to use for load-balanced torrification",
+      "options": [
+        "iptables",
+        "nftables"
+      ],
+      "default": "nftables",
+      "required": false
+    },
+    "balancing_mode": {
+      "type": "choice",
+      "description": "Load balancing algorithm for traffic distribution across Tor instances",
+      "options": [
+        "consistent-hashing",
+        "round-robin",
+        "weighted"
+      ],
+      "default": "round-robin",
+      "required": false
+    }
+  },
+  "steps": [
+    {
+      "id": 8,
+      "type": "command",
+      "cmd": "sudo tor-switch set-load-balancing-mode ${balancing_mode}",
+      "description": "Set load balancing mode",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 2,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Set load balancing mode",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.tor-switch.set-load-balancing-mode",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "set-load-balancing-mode",
+        "${balancing_mode}"
+      ]
+    },
+    {
+      "id": 9,
+      "type": "command",
+      "cmd": "sudo tor-switch torrify-system-${firewall}-load-balanced",
+      "description": "Run the typed workflow command 'sudo tor-switch torrify-system-${firewall}-load-balanced'.",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 90,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "medium",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Use Tor status, detorrify, or bridge setup profiles to adjust anonymity routing."
+      },
+      "command_id": "workflow.argv.tor-switch.a64b177fabb287fb",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "torrify-system-${firewall}-load-balanced"
+      ]
+    },
+    {
+      "id": 10,
+      "type": "command",
+      "cmd": "ip-fetch check-tor",
+      "description": "Check if connection is using Tor network",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.ip-fetch.check-tor",
+      "argv": [
+        "/opt/kodachi/dashboard/hooks/ip-fetch",
+        "check-tor"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "command",
+      "cmd": "echo '✓ Load-balanced Tor (${balancing_mode} + ${firewall}) configured successfully'",
+      "description": "Run the typed workflow command 'echo '✓ Load-balanced Tor (${balancing_mode} + ${firewall}) configured successfully''.",
+      "condition": {
+        "type": "if_state",
+        "state": "torrify",
+        "expect": true
+      },
+      "timeout": 10,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Review the step result and restore the prior state before continuing if the command changed system state."
+      },
+      "command_id": "workflow.argv.echo.1961f84ace891acc",
+      "argv": [
+        "echo",
+        "✓ Load-balanced Tor (${balancing_mode} + ${firewall}) configured successfully"
+      ]
+    }
+  ]
+}

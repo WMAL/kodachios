@@ -1,0 +1,117 @@
+{
+  "schema_version": "1.1",
+  "id": "tor-dns-verify-leak",
+  "name": "tor-dns-verify-leak",
+  "description": "Setup Tor DNS and verify no DNS leaks exist",
+  "metadata": {
+    "created": "2025-10-08T00:00:00Z",
+    "modified": "2026-07-08T02:25:00Z",
+    "version": "1.1"
+  },
+  "global_settings": {
+    "kill_policy": "stop",
+    "continue_policy": false,
+    "max_log_size": 10485760,
+    "default_timeout": 300,
+    "working_dir": "."
+  },
+  "steps": [
+    {
+      "id": 1,
+      "type": "command",
+      "cmd": "sudo tor-switch start-tor",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Start Tor daemon",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.tor-switch.start-tor",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "start-tor"
+      ],
+      "description": "Start Tor daemon"
+    },
+    {
+      "id": 2,
+      "type": "command",
+      "cmd": "sudo tor-switch start-tor-dns-nftables",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "dns",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Start Tor DNS with nftables",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.tor-switch.start-tor-dns-nftables",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "start-tor-dns-nftables"
+      ],
+      "description": "Start Tor DNS with nftables"
+    },
+    {
+      "id": 3,
+      "type": "command",
+      "cmd": "dns-leak test --timeout 120 --json",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "dns",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "low",
+        "requires_auth": true,
+        "needs_sudo": false,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.dns-leak.test",
+      "argv": [
+        "/opt/kodachi/dashboard/hooks/dns-leak",
+        "test",
+        "--timeout",
+        "120",
+        "--json"
+      ],
+      "description": "Run DNS leak test on specified interface or all interfaces (requires prior online-auth authentication; this is also what a bare `dns-leak` runs)"
+    }
+  ]
+}

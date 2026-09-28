@@ -1,0 +1,112 @@
+{
+  "schema_version": "1.1",
+  "id": "emergency-kill-switch-arm",
+  "name": "emergency-kill-switch-arm",
+  "description": "Arm emergency kill switch for high-alert preparedness state",
+  "metadata": {
+    "created": "2025-10-08T00:00:00Z",
+    "modified": "2025-10-08T21:01:09Z",
+    "version": "1.1"
+  },
+  "global_settings": {
+    "kill_policy": "stop",
+    "continue_policy": true,
+    "max_log_size": 10485760,
+    "default_timeout": 300,
+    "working_dir": "."
+  },
+  "steps": [
+    {
+      "id": 1,
+      "type": "command",
+      "cmd": "sudo health-control kill-switch-arm",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "emergency",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Arm the emergency kill switch - sets system to high-alert state for manual activation. NOTE: This prepares the system for rapid response but does NOT actively monitor for threats. It's a preparedness state that allows quick manual activation via kill-switch-activate command.",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.health-control.kill-switch-arm",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "kill-switch-arm"
+      ],
+      "description": "Arm the emergency kill switch - sets system to high-alert state for manual activation. NOTE: This prepares the system for rapid response but does NOT actively monitor for threats. It's a preparedness state that allows quick manual activation via kill-switch-activate command."
+    },
+    {
+      "id": 2,
+      "type": "command",
+      "cmd": "health-control kill-switch-status",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "emergency",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.health-control.kill-switch-status",
+      "argv": [
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "kill-switch-status"
+      ],
+      "description": "Check whether the kill switch high-alert flag is armed/disarmed. Shows armed time and trigger count. Arming is a state flag, not a monitor: nothing is watching and nothing auto-fires. Does NOT activate anything - just displays current status."
+    },
+    {
+      "id": 3,
+      "type": "command",
+      "cmd": "echo 'Kill switch armed and ready'",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 10,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "emergency",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Review the step result and restore the prior state before continuing if the command changed system state."
+      },
+      "command_id": "workflow.argv.echo.deaa53142867eadc",
+      "argv": [
+        "echo",
+        "Kill switch armed and ready"
+      ],
+      "description": "Run the typed workflow command 'echo 'Kill switch armed and ready''."
+    }
+  ]
+}

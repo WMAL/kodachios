@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.1",
+  "id": "removable-media-guard",
+  "name": "removable-media-guard",
+  "description": "Inventory removable media and enable USBGuard protection.",
+  "metadata": {
+    "created": "2026-07-16T00:00:00Z",
+    "modified": "2026-07-16T00:00:00Z",
+    "author": "Kodachi ColonyOps",
+    "version": "1.0"
+  },
+  "global_settings": {
+    "kill_policy": "stop",
+    "continue_policy": false,
+    "max_log_size": 10485760,
+    "default_timeout": 300,
+    "working_dir": "."
+  },
+  "steps": [
+    {
+      "type": "command",
+      "cmd": "sudo health-control usb-list --json",
+      "description": "List all USB devices",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "binaries",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "id": 1,
+      "command_id": "rust.health-control.usb-list",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "usb-list",
+        "--json"
+      ]
+    },
+    {
+      "type": "command",
+      "cmd": "sudo health-control usb-status --json",
+      "description": "Check USB Guard protection status",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "binaries",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "id": 2,
+      "command_id": "rust.health-control.usb-status",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "usb-status",
+        "--json"
+      ]
+    },
+    {
+      "type": "command",
+      "cmd": "sudo usbguard list-devices",
+      "description": "Run sudo usbguard list-devices through the typed Linux executor",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "binaries",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-command",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the corresponding status command and restore the previous configuration if needed."
+      },
+      "id": 3,
+      "command_id": "linux.usbguard_devices",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/usr/bin/usbguard",
+        "list-devices"
+      ]
+    },
+    {
+      "type": "command",
+      "cmd": "sudo health-control usb-guard-enable --json",
+      "description": "Enable USB Guard protection",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "binaries",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Enable USB Guard protection",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "id": 4,
+      "command_id": "rust.health-control.usb-guard-enable",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "usb-guard-enable",
+        "--json"
+      ]
+    },
+    {
+      "type": "command",
+      "cmd": "sudo health-control offline-usb-storage --action check --json",
+      "description": "Manage USB storage devices",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "binaries",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Manage USB storage devices",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "id": 5,
+      "command_id": "rust.health-control.offline-usb-storage",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "offline-usb-storage",
+        "--action",
+        "check",
+        "--json"
+      ]
+    }
+  ]
+}

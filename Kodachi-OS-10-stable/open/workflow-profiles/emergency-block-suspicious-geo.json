@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.1",
+  "id": "emergency-block-suspicious-geo",
+  "name": "emergency-block-suspicious-geo",
+  "description": "Block internet if IP geolocates to 5eyes surveillance countries",
+  "metadata": {
+    "created": "2025-10-08T00:00:00Z",
+    "modified": "2026-07-08T00:58:00Z",
+    "version": "1.1"
+  },
+  "global_settings": {
+    "kill_policy": "stop",
+    "continue_policy": true,
+    "max_log_size": 10485760,
+    "default_timeout": 300,
+    "working_dir": "."
+  },
+  "steps": [
+    {
+      "id": 1,
+      "type": "command",
+      "cmd": "ip-fetch --json",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "info",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "low",
+        "requires_auth": true,
+        "needs_sudo": false,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.ip-fetch.fetch",
+      "argv": [
+        "/opt/kodachi/dashboard/hooks/ip-fetch",
+        "--json"
+      ],
+      "description": "Fetch IP geolocation information (default command)"
+    },
+    {
+      "id": 2,
+      "type": "command",
+      "cmd": "sudo health-control block-internet",
+      "condition": {
+        "type": "if_regex",
+        "pattern": "(?i)\"country_code\"\\s*:\\s*\"(us|gb|au|ca|nz)\""
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "emergency",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Block all internet traffic",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.health-control.block-internet",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "block-internet"
+      ],
+      "description": "Block all internet traffic"
+    }
+  ]
+}

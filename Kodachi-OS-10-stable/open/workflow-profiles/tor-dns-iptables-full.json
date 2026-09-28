@@ -1,0 +1,161 @@
+{
+  "schema_version": "1.1",
+  "id": "tor-dns-iptables-full",
+  "name": "tor-dns-iptables-full",
+  "description": "Setup Tor DNS ONLY with iptables (no torrification)",
+  "metadata": {
+    "created": "2025-10-08T00:00:00Z",
+    "modified": "2025-10-22T00:00:00Z",
+    "version": "2.0"
+  },
+  "global_settings": {
+    "kill_policy": "stop",
+    "continue_policy": false,
+    "max_log_size": 10485760,
+    "default_timeout": 300,
+    "working_dir": "."
+  },
+  "includes": [
+    "base-auth-check"
+  ],
+  "parameters": {
+    "firewall": {
+      "type": "choice",
+      "description": "Firewall backend to use for Tor DNS",
+      "options": [
+        "iptables",
+        "nftables"
+      ],
+      "default": "iptables",
+      "required": false
+    }
+  },
+  "steps": [
+    {
+      "id": 3,
+      "type": "command",
+      "cmd": "sudo tor-switch start-tor",
+      "description": "Start Tor daemon",
+      "condition": {
+        "type": "if_state",
+        "state": "tor_running",
+        "expect": false
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Start Tor daemon",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.tor-switch.start-tor",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "start-tor"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "command",
+      "cmd": "sudo tor-switch start-tor-dns-${firewall}",
+      "description": "Run the typed workflow command 'sudo tor-switch start-tor-dns-${firewall}'.",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 60,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "dns",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "medium",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Use DNS status, fallback, or the previous resolver profile to restore resolver state."
+      },
+      "command_id": "workflow.argv.tor-switch.9864f14e1f97d662",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "start-tor-dns-${firewall}"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "command",
+      "cmd": "tor-switch verify-tor-dns",
+      "description": "Verify Tor DNS resolution",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "dns",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.tor-switch.verify-tor-dns",
+      "argv": [
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "verify-tor-dns"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "command",
+      "cmd": "echo '✓ Tor DNS with ${firewall} configured successfully'",
+      "description": "Run the typed workflow command 'echo '✓ Tor DNS with ${firewall} configured successfully''.",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 10,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "dns",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Review the step result and restore the prior state before continuing if the command changed system state."
+      },
+      "command_id": "workflow.argv.echo.a2c2c881e28396a6",
+      "argv": [
+        "echo",
+        "✓ Tor DNS with ${firewall} configured successfully"
+      ]
+    }
+  ]
+}

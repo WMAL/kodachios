@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.1",
+  "id": "security-full-audit",
+  "name": "security-full-audit",
+  "description": "Complete security audit: auth check, integrity verify, hardware RNG, entropy status",
+  "metadata": {
+    "created": "2025-10-08T00:00:00Z",
+    "modified": "2025-10-08T00:00:00Z",
+    "version": "1.0"
+  },
+  "global_settings": {
+    "kill_policy": "continue",
+    "continue_policy": true,
+    "max_log_size": 10485760,
+    "default_timeout": 600,
+    "working_dir": "."
+  },
+  "steps": [
+    {
+      "id": 1,
+      "type": "command",
+      "cmd": "sudo online-auth check-login",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "identity",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.online-auth.check-login",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/online-auth",
+        "check-login"
+      ],
+      "description": "Check if currently logged in"
+    },
+    {
+      "id": 2,
+      "type": "command",
+      "cmd": "sudo integrity-check check-all",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "soc",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.integrity-check.check-all",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/integrity-check",
+        "check-all"
+      ],
+      "description": "Comprehensive check. Runs the AUTHORITATIVE offline signature verification FIRST (its verdict decides pass/fail), then the version-aware online hash comparison as an advisory. A bad signature fails; being behind the latest published build does not."
+    },
+    {
+      "id": 3,
+      "type": "command",
+      "cmd": "sudo health-control hardware-rng-verify",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "soc",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.health-control.hardware-rng-verify",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "hardware-rng-verify"
+      ],
+      "description": "Verify hardware random number generator status"
+    },
+    {
+      "id": 4,
+      "type": "command",
+      "cmd": "sudo health-control entropy-status",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "soc",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.health-control.entropy-status",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "entropy-status"
+      ],
+      "description": "Check system entropy pool status and quality"
+    },
+    {
+      "id": 5,
+      "type": "command",
+      "cmd": "health-control security-score",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "soc",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.health-control.security-score",
+      "argv": [
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "security-score"
+      ],
+      "description": "Calculate security score and get recommendations"
+    }
+  ]
+}

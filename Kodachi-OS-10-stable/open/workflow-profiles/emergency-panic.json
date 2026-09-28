@@ -1,0 +1,109 @@
+{
+  "schema_version": "1.1",
+  "id": "emergency-panic",
+  "name": "emergency-panic",
+  "description": "Unified emergency panic profile: Execute soft, medium, or hard panic mode based on selected level parameter. Uses base-auth-check profile for authentication. Consolidates 3 panic profiles into one parametrized workflow with optional security score checking.",
+  "metadata": {
+    "created": "2025-10-20T00:00:00Z",
+    "modified": "2025-10-20T00:00:00Z",
+    "version": "2.0"
+  },
+  "global_settings": {
+    "kill_policy": "stop",
+    "continue_policy": true,
+    "max_log_size": 10485760,
+    "default_timeout": 300,
+    "working_dir": "."
+  },
+  "parameters": {
+    "panic_level": {
+      "type": "choice",
+      "description": "Panic mode severity level",
+      "options": [
+        "soft",
+        "medium",
+        "hard"
+      ],
+      "default": "soft",
+      "required": false
+    }
+  },
+  "includes": [
+    "base-auth-check"
+  ],
+  "steps": [
+    {
+      "id": 1,
+      "type": "pause",
+      "message": "EMERGENCY: ${panic_level} panic mode will execute. This will immediately affect system operations. Continue?",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 0,
+      "confirm": false,
+      "nice_level": 0
+    },
+    {
+      "id": 2,
+      "type": "command",
+      "cmd": "sudo health-control panic-${panic_level}",
+      "description": "Run the typed workflow command 'sudo health-control panic-${panic_level}'.",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 90,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "emergency",
+      "score_impact": -8,
+      "colonyops_safety": {
+        "danger_level": "critical",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": true,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "No reliable rollback is available; restore affected data from backups if needed."
+      },
+      "command_id": "rust.health-control.panic-${panic_level}",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "panic-${panic_level}"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "command",
+      "cmd": "echo '✓ ${panic_level} panic mode activated successfully'",
+      "description": "Run the typed workflow command 'echo '✓ ${panic_level} panic mode activated successfully''.",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 10,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "emergency",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Review the step result and restore the prior state before continuing if the command changed system state."
+      },
+      "command_id": "workflow.argv.echo.c23de739c71664dc",
+      "argv": [
+        "echo",
+        "✓ ${panic_level} panic mode activated successfully"
+      ]
+    }
+  ]
+}

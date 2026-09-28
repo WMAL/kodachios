@@ -1,0 +1,303 @@
+{
+  "schema_version": "1.1",
+  "id": "system-check-advanced",
+  "name": "system-check-advanced",
+  "description": "Deep system analysis: kernel, firewall, security audit, and network diagnostics",
+  "metadata": {
+    "created": "2025-10-09T00:00:00Z",
+    "modified": "2025-10-09T00:00:00Z",
+    "version": "1.0"
+  },
+  "global_settings": {
+    "kill_policy": "continue",
+    "continue_policy": true,
+    "max_log_size": 10485760,
+    "default_timeout": 300,
+    "working_dir": "."
+  },
+  "steps": [
+    {
+      "id": 1,
+      "type": "command",
+      "cmd": "uname -a",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "info",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-command",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the corresponding status command and restore the previous configuration if needed."
+      },
+      "command_id": "linux.system.uname",
+      "argv": [
+        "/usr/bin/uname",
+        "-a"
+      ],
+      "description": "Run uname -a through the typed Linux executor"
+    },
+    {
+      "id": 2,
+      "type": "command",
+      "cmd": "lsmod",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "info",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-command",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the corresponding status command and restore the previous configuration if needed."
+      },
+      "command_id": "linux.system.lsmod",
+      "argv": [
+        "/usr/sbin/lsmod"
+      ],
+      "description": "Run lsmod through the typed Linux executor"
+    },
+    {
+      "id": 3,
+      "type": "command",
+      "cmd": "sudo iptables -L -n -v",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "info",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-command",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the corresponding status command and restore the previous configuration if needed."
+      },
+      "command_id": "linux.system.iptables_list",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/usr/sbin/iptables",
+        "-L",
+        "-n",
+        "-v"
+      ],
+      "description": "Run sudo iptables -L -n -v through the typed Linux executor"
+    },
+    {
+      "id": 4,
+      "type": "command",
+      "cmd": "sudo nft list ruleset",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "info",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-command",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the corresponding status command and restore the previous configuration if needed."
+      },
+      "command_id": "linux.nft_rules",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/usr/sbin/nft",
+        "list",
+        "ruleset"
+      ],
+      "description": "Inspect the full nftables policy"
+    },
+    {
+      "id": 5,
+      "type": "command",
+      "cmd": "journalctl _COMM=systemd-logind -S '1 day ago' -q --no-pager",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 30,
+      "confirm": false,
+      "nice_level": 0,
+      "description": "Run the typed workflow command 'journalctl _COMM=systemd-logind -S '1 day ago' -q --no-pager'.",
+      "cell_store": "identity",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Review the step result and restore the prior state before continuing if the command changed system state."
+      },
+      "command_id": "workflow.argv.journalctl.c5f67ee21b5e2729",
+      "argv": [
+        "journalctl",
+        "_COMM=systemd-logind",
+        "-S",
+        "1 day ago",
+        "-q",
+        "--no-pager"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "command",
+      "cmd": "ip route show",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "routing",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-command",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the corresponding status command and restore the previous configuration if needed."
+      },
+      "command_id": "linux.route",
+      "argv": [
+        "/usr/sbin/ip",
+        "route",
+        "show"
+      ],
+      "description": "Run ip route through the typed Linux executor"
+    },
+    {
+      "id": 7,
+      "type": "command",
+      "cmd": "ss -tunap",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 30,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "info",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Review the step result and restore the prior state before continuing if the command changed system state."
+      },
+      "command_id": "workflow.argv.ss.4a4dcbab7576fe5d",
+      "argv": [
+        "ss",
+        "-tunap"
+      ],
+      "description": "Run the typed workflow command 'ss -tunap'."
+    },
+    {
+      "id": 8,
+      "type": "command",
+      "cmd": "ping -c 4 1.1.1.1",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "info",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-command",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the corresponding status command and restore the previous configuration if needed."
+      },
+      "command_id": "linux.ping",
+      "argv": [
+        "/usr/bin/ping",
+        "-c",
+        "4",
+        "1.1.1.1"
+      ],
+      "description": "Run ping -c 4 <host> through the typed Linux executor"
+    },
+    {
+      "id": 9,
+      "type": "command",
+      "cmd": "echo 'System check advanced completed successfully'",
+      "condition": {
+        "type": "if_success"
+      },
+      "timeout": 10,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "info",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Review the step result and restore the prior state before continuing if the command changed system state."
+      },
+      "command_id": "workflow.argv.echo.efd94adbec51dbf1",
+      "argv": [
+        "echo",
+        "System check advanced completed successfully"
+      ],
+      "description": "Run the typed workflow command 'echo 'System check advanced completed successfully''."
+    }
+  ]
+}

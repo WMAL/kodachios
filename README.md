@@ -9,8 +9,8 @@ Failover VPN, Tor routing, DNSCrypt, a kill switch and anti-forensic tooling, pr
 
 [![Website](https://img.shields.io/badge/kodachi.cloud-Visit-9FEF00?style=flat-square&logo=firefox&logoColor=black)](https://kodachi.cloud/)
 [![Download](https://img.shields.io/badge/Download-ISOs%20%26%20binaries-blue?style=flat-square&logo=cloudsmith&logoColor=white)](https://kodachi.cloud/downloads/)
-[![Version](https://img.shields.io/badge/Current-Kodachi%209-brightgreen?style=flat-square)](https://kodachi.cloud/)
-[![Beta](https://img.shields.io/badge/Beta%20available-Kodachi%2010-orange?style=flat-square&logo=git&logoColor=white)](#kodachi-10--now-in-beta)
+[![Version](https://img.shields.io/badge/Stable-Kodachi%2010.0.3%20Dragon-brightgreen?style=flat-square)](#kodachi-10-dragon--the-current-release)
+[![Base](https://img.shields.io/badge/Based%20on-Debian%2013%20Trixie-A81D33?style=flat-square&logo=debian&logoColor=white)](https://kodachi.cloud/docs/changelog.html)
 [![License](https://img.shields.io/badge/License-KSAN--1.1-lightgrey?style=flat-square)](LICENSE.md)
 [![Discord](https://img.shields.io/badge/Discord-Support-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/KEFErEx)
 
@@ -19,20 +19,20 @@ Failover VPN, Tor routing, DNSCrypt, a kill switch and anti-forensic tooling, pr
 ---
 
 > [!IMPORTANT]
-> **Kodachi 10 beta is out, and the beta ISO has landed. Give it a try.**
+> **Kodachi 10 is stable. Kodachi 10.0.3, code name Dragon, was released on 27.09.2026.**
 >
-> The 10.x line is published on the **beta channel** and open for public testing, while Kodachi 9 stays the stable release. Beta gets new work first, including the AmneziaWG and OpenVPN over Cloak transports, and is rebuilt often, so expect rough edges and report what you find.
+> It is the first stable release of the 10 line, built on Debian 13 (Trixie), 64-bit with BIOS, UEFI and Secure Boot. The **Desktop (XFCE)** ISO, the **Terminal / Server** ISO and the **Binary Pack** all report the same version, and the signed **stable APT channel** carries it. Every image ships with SHA-256 / SHA-512 / MD5 checksums, a detached RSA-4096 signature and a release manifest.
 >
-> **Beta ISO, the fastest way in.** The Kodachi 10 beta **Desktop (XFCE)** live ISO is published and downloadable now. Boot it, run the whole system live, or install it, with the same SHA-256 / SHA-512 / MD5 checksums, detached RSA-4096 signature and release manifest as every other Kodachi image. Grab it from the **[Downloads Center, beta track](https://kodachi.cloud/downloads/?track=beta#desktop)**. It is rebuilt often, so pull a fresh copy rather than reusing an old one. The Terminal / Server ISO stays on Kodachi 9 for now.
+> **Fresh install:** grab the ISO from the **[Downloads Center](https://kodachi.cloud/downloads/)** and [verify it](https://kodachi.cloud/docs/security/file-verify.html) before you boot it.
 >
-> **Or keep the system you already have.** Beta is also a package channel. Install a current ISO, or use a Debian-family system you already run, then point APT at the beta repository:
+> **A Debian 13 or Ubuntu 24.04 system you already run:** add the signed repository and install the full suite.
 >
 > ```bash
-> curl -fsSL https://kodachi.cloud/repo-beta/setup.sh | sudo sh
+> curl -fsSL https://kodachi.cloud/repo/setup.sh | sudo sh
 > sudo apt update && sudo apt install kodachi
 > ```
 >
-> Already running Kodachi from the stable channel? Switching is a different pair of commands, because APT will not move an installed package to beta on its own. Those, the supported releases, and the two commands that put you back on stable are all on the **[Downloads Center](https://kodachi.cloud/downloads/)**.
+> After that, `sudo apt update && sudo apt upgrade` moves everything you installed to each new release. Debian 12 and Ubuntu 22.04 are no longer supported by the stable packages (they need glibc 2.39). The **beta** track keeps going for people who want new work first, and switching between tracks in either direction is covered on the Downloads Center.
 
 ---
 
@@ -42,9 +42,9 @@ Three editions, one security core. Pick by how you want to run it.
 
 | Edition | What it is | Get it |
 |---|---|---|
-| **Desktop (Debian XFCE)** | The full experience: graphical dashboard, every security binary pre-integrated. | [Stable ISO](https://kodachi.cloud/downloads/#desktop) &middot; [Kodachi 10 beta ISO](https://kodachi.cloud/downloads/?track=beta#desktop) &middot; [Guide](https://kodachi.cloud/docs/desktop-debian.html) |
-| **Terminal Server** | Lightweight ISO, all binaries pre-configured, no desktop. For servers and headless boxes. | [ISO](https://kodachi.cloud/downloads/#terminal) &middot; [Guide](https://kodachi.cloud/docs/terminal-version.html) |
-| **Standalone binaries** | Add Kodachi's tools to a Debian-based system you already run. Ships with the dashboard GUI. | [Download + install instructions](https://kodachi.cloud/downloads/#binaries) |
+| **Desktop (Debian XFCE)** | The full experience: five dashboards, the Cairo Dock, every security binary pre-integrated. About 4.2 GB. | [Stable ISO](https://kodachi.cloud/downloads/#desktop) &middot; [Beta ISO](https://kodachi.cloud/downloads/?track=beta#desktop) &middot; [Guide](https://kodachi.cloud/docs/desktop-debian.html) |
+| **Terminal Server** | Lightweight ISO, all binaries pre-configured, no desktop. For servers and headless boxes. About 3 GB. | [Stable ISO](https://kodachi.cloud/downloads/#terminal) &middot; [Beta ISO](https://kodachi.cloud/downloads/?track=beta#terminal) &middot; [Guide](https://kodachi.cloud/docs/terminal-version.html) |
+| **Binaries / APT** | Add Kodachi's tools, and the dashboard GUI, to a Debian 13 or Ubuntu 24.04 system you already run, from the signed APT repository. | [Install instructions](https://kodachi.cloud/downloads/#binaries) |
 
 Everything lives on the **[Downloads Center](https://kodachi.cloud/downloads/)**, including the install instructions for each edition, the apt repository setup, live download trends and by-country stats. **[Verify what you downloaded](https://kodachi.cloud/docs/security/file-verify.html)** before you boot it, and [check your system is current](https://kodachi.cloud/tools/proof.html) after you do.
 
@@ -52,19 +52,26 @@ Everything lives on the **[Downloads Center](https://kodachi.cloud/downloads/)**
 
 ---
 
-## Kodachi 10 , now in beta
+## Kodachi 10 Dragon , the current release
 
-Kodachi 10 is the next major release, built on the Kodachi 9 foundation: new capabilities, wider feature coverage, and performance and security work across the whole stack (binaries, terminal edition, desktop edition, AI layer, cloud platform).
+Kodachi 10 is the current stable line: new capabilities, wider feature coverage, and performance and security work across the whole stack (binaries, terminal edition, desktop edition, AI layer, cloud platform). The highlights, taken from the [changelog](https://kodachi.cloud/docs/changelog.html):
 
-The beta **Desktop (XFCE) ISO** and the beta **packages** are both live now: download the ISO from the [Downloads Center, beta track](https://kodachi.cloud/downloads/?track=beta#desktop), or move a system you already run onto the beta channel with the two commands in the banner at the top of this page. There is no fixed date for the **stable** Kodachi 10 release. Roadmap items, previews and changelogs are published here and on the [landing page](https://kodachi.cloud/) as they land.
+- **Five dashboards** share one left rail, a command box and a Ctrl+K command palette: **Circle**, **Lite**, **ColonyOps** (every command, workflow and Linux utility as a runnable cell on a visual map), **Vitals** (a live terminal-style monitor) and **SOC** (host security findings, with what to do about each one)
+- **The Cairo Dock returns**, rebuilt around GTK windows, with privileged actions running through an authenticating action runner, plus a **Recipes** icon that exposes 94 runnable workflows
+- **A signed APT repository** with three lines, **stable**, **beta** and **dev**, managed from the new **Repository Manager**, with a system snapshot taken before a risky APT transaction so a bad update has an undo. Tor Browser, Portmaster, Monero GUI, Mission Center and Pi-hole now update through `sudo apt upgrade`
+- **Two obfuscated VPN transports**, **AmneziaWG** and **OpenVPN over Cloak**, work end to end from every surface that offers a VPN connection
+- **The dashboard in your own language**: 11 interface languages, with right-to-left Pakistani Urdu newly added, guided tours for every dashboard, and a new **Quick Launch** startup screen
+- **An always-on Host Exposure watcher**, a **Firmware & Platform Security** panel, an **AI-agent detector** on the SOC page, and a USB Guard that is a real on and off switch
+- **Hardening fixes found in beta testing**: a wrong disk-encryption passphrase now retries instead of dropping to a GRUB prompt, installed systems receive kernel security updates, the kill switch reports what is actually enforced, and an unreadable state now reads Unknown instead of Off
+- **A better terminal**: fuzzy Ctrl+R history search, `z` directory jumping (history kept in RAM only), `tldr`, `newsboat` over the system proxy, and more
 
-**Feature requests and feedback shape what ships**, and a bug report from a beta tester is the most useful thing anyone can send right now. Open an [issue](https://github.com/WMAL/kodachios/issues) or bring it to [Discord](https://discord.gg/KEFErEx).
+**Feature requests and feedback shape what ships next.** Open an [issue](https://github.com/WMAL/kodachios/issues) or bring it to [Discord](https://discord.gg/KEFErEx). The **beta** track is where the next cut is tested first.
 
 | | |
 |---|---|
 | Live changelog | [kodachi.cloud/docs/changelog.html](https://kodachi.cloud/docs/changelog.html) ([raw](https://kodachi.cloud/apps/os/CHANGELOG.md)) |
-| What ships in the open | [Kodachi-OS-10-beta/open](Kodachi-OS-10-beta/open) , 222 files: the installer scripts, all 122 workflow profiles, the dock command surface, the Thunar actions, the conky collectors and the AppArmor profile. Everything there already ships in the ISO as plaintext |
-| R&D history | [Kodachi-OS-9-stable/v9-behind-scenes-progress](Kodachi-OS-9-stable/v9-behind-scenes-progress) |
+| What ships in the open | [Kodachi-OS-10-stable/open](Kodachi-OS-10-stable/open) , 222 files: the installer scripts, all 122 workflow profiles, the dock command surface, the Thunar actions, the conky collectors and the AppArmor profile. Everything there already ships in the ISO as plaintext |
+| R&D history | [Kodachi-OS-9-legacy/v9-behind-scenes-progress](Kodachi-OS-9-legacy/v9-behind-scenes-progress) |
 
 ---
 
@@ -106,11 +113,11 @@ Included with **[Kodachi Premium](https://kodachi.cloud/docs/support.html)**:
 
 ---
 
-## Kodachi 9 , the current release
+## Kodachi 9 , the previous release
 
-Kodachi 9 is finished, released and production-ready. Every component ships: standalone binaries, terminal server edition, desktop edition, the Tauri dashboard GUI, the AI layer (KAICS), and the cloud platform.
+Kodachi 9 was the release line before Kodachi 10: standalone binaries, terminal server edition, desktop edition, the Tauri dashboard GUI, the AI layer and the cloud platform. It is superseded by Kodachi 10 and kept here as a record.
 
-The full Kodachi 9 record, the component-by-component roadmap, the release phases, the development timeline and the historical update log, lives in **[Kodachi-OS-9-stable/README.md](Kodachi-OS-9-stable/README.md)**.
+The full Kodachi 9 record, the component-by-component roadmap, the release phases, the development timeline and the historical update log, lives in **[Kodachi-OS-9-legacy/README.md](Kodachi-OS-9-legacy/README.md)**.
 
 Kodachi 8.27 reached end of life and is archived in **[Kodachi-OS-8-EOL](Kodachi-OS-8-EOL)**.
 

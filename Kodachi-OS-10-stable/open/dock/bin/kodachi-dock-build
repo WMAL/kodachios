@@ -1,0 +1,1318 @@
+#!/usr/bin/env bash
+# Kodachi Dock Control - Layout Generator
+#
+# SPDX-License-Identifier: LicenseRef-Kodachi-SAN-1.1
+# Copyright (c) 2013-2026 Warith Al Maawali
+#
+# This file is part of Kodachi OS.
+# For full license terms, see LICENSE.md or visit:
+# https://kodachi.cloud/docs/license.html
+#
+# Commercial or organizational use requires a written license.
+# Contact: warith@digi77.com
+#
+# Description:
+# Generates the cairo-dock launcher set from two declarative inputs:
+#   dock-layout.tsv    the sub-docks, their order and their icons
+#   dock-actions.tsv   every action cell and which sub-dock it belongs to
+#
+# Launcher files are an OUTPUT, never a source of truth. Editing them by hand is
+# lost on the next run; edit the two TSV inputs instead.
+#
+# The generator is idempotent: ordering is derived from input file order rather
+# than from directory listing or time, so two runs against unchanged inputs
+# produce byte-identical output. `--verify` proves that without touching the
+# live layout.
+#
+# The previous layout is MOVED to a timestamped backup with a manifest, never
+# deleted, so a regeneration the user did not want is recoverable.
+#
+# Author: Warith Al Maawali
+# Version: <lab-host>
+# Last updated: 2026-08-16
+
+set -euo pipefail
+
+# ── Configuration ─────────────────────────────────────────────
+
+readonly DOCK_SHARE_DIR="${DOCK_SHARE_DIR:-/usr/local/share/kodachi/dock}"
+readonly ROFI_LIB_DIR="${ROFI_LIB_DIR:-/usr/local/lib/kodachi-rofi}"
+readonly LAYOUT_FILE="${DOCK_LAYOUT:-${DOCK_SHARE_DIR}/dock-layout.tsv}"
+readonly ACTIONS_FILE="${DOCK_SIDECAR:-${ROFI_LIB_DIR}/dock-actions.tsv}"
+readonly ACTION_RUNNER="/usr/local/libexec/kodachi/kodachi-dock-action"
+readonly COMMAND_WINDOW="/usr/local/libexec/kodachi/kodachi-command-window"
+readonly CAIRO_VERSION="3.5.1"
+
+# A dock-actions row carrying this in its Category column is a group divider, not
+# an action. It has no registry row and never runs anything, so every consumer
+# (this generator, the runner's --check and --list) must recognise it by name.
+readonly SEPARATOR_CATEGORY="_SEP_"
+# A cell that launches an ORDINARY PROGRAM rather than a registry action. Its
+# Exec is carried verbatim in the Payload column, because a desktop application
+# has no (Category, Label) identity in menu-actions.sh and inventing one would
+# ship 77 GUI-only rows onto the headless terminal image, which is the same
+# mistake the _WINDOW_ rows are kept out of that file to avoid.
+readonly LAUNCH_CATEGORY="_LAUNCH_"
+
+# THE DOCK IS PER-USER, AND RUNNING THIS UNDER sudo SILENTLY BUILDS THE WRONG ONE.
+#
+# Every path below is anchored on $HOME. Under `sudo` that is /root, so
+# `sudo kodachi-dock-build build` writes a complete, correct, byte-reproducible
+# dock into /root/.config/cairo-dock/ and reports success, while the dock the
+# user is actually looking at, owned by their own session, never changes. Every
+# gate passes. Measured on <lab-host>, 2026-08-19: 94 launcher files
+# written under /root and a live dock still showing the previous 15, with
+# `verify` reporting "two runs produced 94 identical file(s)" about a tree
+# nothing renders. That is the silent-wrong-answer class, and it is easy to walk
+# into because almost every other Kodachi command DOES need sudo.
+#
+# Refusing is deliberate rather than re-anchoring to $SUDO_USER's home: writing
+# there as root would leave root-owned files inside a user's config directory,
+# which breaks the next un-sudoed run and is the same ownership break that made
+# every auth-gated status read on this VM return "unknown" earlier today.
+# TWO WAYS TO BE ROOT HERE, AND ONLY ONE OF THEM WAS COVERED.
+# `sudo` sets SUDO_USER, so the original guard caught it. A DIRECT root shell
+# (`su -`, a root login, a root cron) has EUID 0 and no SUDO_USER at all, and
+# that path produced the identical measured outcome: 94 files into /root while
+# the user's live dock never changed. Root building root's own dock is
+# legitimate, so that case warns and proceeds rather than refusing; the sudo
+# case still refuses, because there the intended target is knowable and wrong.
+if [[ "${EUID}" -eq 0 && ( -z "${SUDO_USER:-}" || "${SUDO_USER}" == "root" ) ]]; then
+    printf 'NOTE: running as root, so this builds root'"'"'s own dock at %s\n' \
+        "${HOME}/.config/cairo-dock" >&2
+    printf '      A desktop user'"'"'s dock lives under their own home and is NOT touched.\n' >&2
+fi
+if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" && "${EUID}" -eq 0 ]]; then
+    printf 'Refusing to run under sudo: the dock is per-user.\n' >&2
+    printf 'This would build into %s and leave %s untouched.\n' \
+        "${HOME}/.config/cairo-dock" \
+        "$(getent passwd "$SUDO_USER" | cut -d: -f6)/.config/cairo-dock" >&2
+    printf 'Run it as yourself instead:  kodachi-dock-build %s\n' "${*:-build}" >&2
+    exit 2
+fi
+
+readonly CONFIG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}/cairo-dock"
+readonly THEME_DIR="${CONFIG_ROOT}/current_theme"
+readonly LAUNCHER_DIR="${THEME_DIR}/launchers"
+readonly BACKUP_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/kodachi/dock-backups"
+LAST_BACKUP_LAUNCHERS=""
+
+# ── Helpers ───────────────────────────────────────────────────
+
+log() {
+    printf '%s\n' "$*"
+}
+
+fatal() {
+    printf 'ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+require_inputs() {
+    [[ -r "$LAYOUT_FILE" ]] || fatal "layout file not readable: ${LAYOUT_FILE}"
+    [[ -r "$ACTIONS_FILE" ]] || fatal "action file not readable: ${ACTIONS_FILE}"
+}
+
+# Filenames must be stable across runs, so they are derived from the content
+# they describe rather than from a counter that could drift.
+#
+# Implemented with bash parameter expansion only. The obvious `tr | tr | sed`
+# pipeline forks three processes per call and this runs 141 times per build,
+# which was measured taking over two minutes on a Kodachi 9 VM.
+slugify() {
+    local value="${1,,}"
+    local index character result=""
+    for ((index = 0; index < ${#value}; index++)); do
+        character="${value:index:1}"
+        case "$character" in
+            [a-z0-9]) result+="$character" ;;
+            *) result+="-" ;;
+        esac
+    done
+    while [[ "$result" == *--* ]]; do
+        result="${result//--/-}"
+    done
+    result="${result#-}"
+    result="${result%-}"
+    printf '%s' "$result"
+}
+
+# Shell-quote a value for the Exec line. Category and label come from a
+# controlled TSV, but quoting them anyway means a future label containing a
+# space or an apostrophe cannot silently produce a broken launcher.
+shell_quote() {
+    printf "'%s'" "${1//\'/\'\\\'\'}"
+}
+
+# ── Emitters ──────────────────────────────────────────────────
+# The key layout follows /usr/share/cairo-dock/container.desktop and
+# launcher.desktop from cairo-dock 3.5.1, so the files the generator writes are
+# the same shape as the ones cairo-dock writes itself.
+
+emit_container() {
+    local name="$1" icon="$2" order="$3" render="$4" target="$5"
+
+    cat >"$target" <<EOF
+#${CAIRO_VERSION}
+
+#[gtk-about]
+[Desktop Entry]
+
+#F[Icon]
+frame_maininfo=
+
+#d+ Name of the container it belongs to:
+Container=_MainDock_
+
+#s[New sub-dock] Sub-dock's name:
+Name=${name}
+
+#v
+sep_display=
+
+#Y+[Use an image;1;1;Draw sub-dock's content as emblems;0;0;Draw sub-dock's content as stack;0;0;Draw sub-dock's content inside a box;0;0] How to render the icon:
+render=${render}
+
+#S+ Image's name or path:
+Icon=${icon}
+
+
+#X[Extra parameters]
+frame_extra=
+
+#n Name of the view used for the sub-dock:
+Renderer=
+
+#i-[0;16] Only show in this specific viewport:
+#{If '0' the container will be displayed on every viewport.}
+ShowOnViewport=0
+
+#f[0;100] Order you want for this launcher among the others:
+Order=${order}
+
+Icon Type=1
+Type=Container
+EOF
+}
+
+# A separator is a first-class cairo-dock icon type, not a launcher with a blank
+# image: `Icon Type=2` plus `Type=Separator` makes cairo-dock draw the shape and
+# colour configured globally under [Separators] and skip click handling entirely.
+# The shape matches /usr/share/cairo-dock/separator.desktop from cairo-dock 3.5.1.
+#
+# Separators are how a sub-dock gets SUB-GROUPS. Nesting a sub-dock inside another
+# sub-dock was measured on cairo-dock 3.5.1 (VM <lab-host>, 2026-08-17) and
+# does NOT work: a Container whose own Container names a sub-dock is accepted, but
+# every launcher pointing at that nested container silently falls back onto the
+# MAIN dock, so the main dock quietly fills with cells nobody put there. Grouping
+# is therefore done with separators inside one level of sub-dock, never by nesting.
+# `label` is written out as Name= purely so `export` can read it back. cairo-dock
+# draws a Separator from the global [Separators] settings and never displays a
+# name, so this is inert to the dock and load-bearing for the round trip.
+#
+# It exists because slugify() maps EVERY non-alphanumeric character to a hyphen,
+# so a filename cannot distinguish "Kodachi Controls" from "Kodachi-Controls".
+# Export used to recover the label from the filename and could only guess; it
+# guessed hyphen, so one build/export cycle silently renamed the operator's
+# "Kodachi Controls" divider to "Kodachi-controls" and then held it there, which
+# looks stable and is wrong. Measured 2026-08-19 against his own dock: 90 of 91
+# data rows survived an export unchanged and that separator was the 91st.
+emit_separator() {
+    local container="$1" order="$2" target="$3" label="${4:-}"
+
+    cat >"$target" <<EOF
+#${CAIRO_VERSION}
+
+#[gtk-about]
+[Desktop Entry]
+
+#F[Icon]
+frame_maininfo=
+
+#d+ Name of the container it belongs to:
+Container=${container}
+
+#v
+sep_display=
+
+#> Separators' appearance is defined in the global configuration.
+Icon=
+
+#> Not drawn. Carried so that \`export\` recovers the exact group label rather
+#> than un-slugifying the filename and guessing where the spaces were.
+Name=${label}
+
+
+#X[Extra parameters]
+frame_extra=
+
+#f[0;100] Order you want for this launcher among the others:
+Order=${order}
+
+Icon Type=2
+Type=Separator
+EOF
+}
+
+emit_launcher() {
+    local container="$1" name="$2" icon="$3" exec_line="$4" order="$5" target="$6"
+
+    cat >"$target" <<EOF
+#${CAIRO_VERSION}
+
+#[gtk-about]
+[Desktop Entry]
+
+#F[Icon]
+frame_maininfo=
+
+#d+ Name of the container it belongs to:
+Container=${container}
+
+#v
+sep_display=
+
+#s[Default] Launcher's name:
+Name=${name}
+
+#S+[Default] Image's name or path:
+Icon=${icon}
+
+#s[Default] Command to launch on click:
+Exec=${exec_line}
+
+
+#X[Extra parameters]
+frame_extra=
+
+#b Don't link the launcher with its window
+prevent inhibate=true
+
+#K[Default] Class of the program:
+StartupWMClass=
+
+#b Run in a terminal?
+Terminal=false
+
+#i-[0;16] Only show in this specific viewport:
+#{If '0' the launcher will be displayed on every viewport.}
+ShowOnViewport=0
+
+#f[0;100] Order you want for this launcher among the others:
+Order=${order}
+
+Icon Type=0
+Type=Application
+Origin=
+EOF
+}
+
+# ── Generation ────────────────────────────────────────────────
+# Writes the complete launcher set into an arbitrary directory, so the same
+# code path serves both a real build and the --verify reproducibility check.
+
+generate_into() {
+    local out_dir="$1"
+    local containers=0 launchers=0 separators=0
+
+    mkdir -p "$out_dir"
+
+    # Sub-docks first, in the order the layout file lists them.
+    #
+    # MAIN-DOCK CELLS AND SUB-DOCK CONTAINERS SHARE ONE Order NAMESPACE, and the
+    # two halves are numbered by different mechanisms: a container carries an
+    # EXPLICIT Order in dock-layout.tsv, while a main-dock cell gets its Order
+    # from its POSITION in dock-actions.tsv, which has no Order column. Until
+    # 2026-08-19 the cell counter walked 1,2,3... blind to what the containers
+    # had already claimed, and that made one whole class of layout impossible to
+    # express: any arrangement with a container BEFORE a main-dock cell.
+    #
+    # Measured on <lab-host> with the operator's own arrangement (eight
+    # containers dragged to the front of the dock, the eleven command windows
+    # pushed behind them): `export` captured it faithfully, `build` regenerated
+    # it with all eight containers wedged between Identity and Devices, because
+    # the cells renumbered to 1..13 while the containers kept the fractional
+    # 5.625..5.9921875 that cairo-dock writes on a drag. The round trip that
+    # `export --help` promises ("prove the capture regenerates the same layout")
+    # silently produced a different dock.
+    #
+    # So collect what the containers take, and let the cell counter step over it.
+    # With the shipped TSVs (containers 0 and 13..19, twelve main-dock rows)
+    # nothing is taken in 1..12 and the numbering is byte-identical to before.
+    local subdock order icon render
+    declare -A main_dock_taken=()
+    while IFS=$'\t' read -r subdock order icon render; do
+        [[ -z "${subdock:-}" || "$subdock" == \#* ]] && continue
+        [[ -n "${render:-}" ]] || continue
+        main_dock_taken[$order]=1
+        if ! emit_container "$subdock" "$icon" "$order" "$render" \
+            "${out_dir}/$(printf '%03d' "$order")-container-$(slugify "$subdock").desktop"; then
+            return 1
+        fi
+        containers=$((containers + 1))
+    done <"$LAYOUT_FILE"
+
+    # Action cells. Position within a sub-dock follows the action file's order,
+    # counted per sub-dock so each dock starts at 1.
+    # NeedsAuth, Timeout and Payload are read past but not used here: they are
+    # the action runner's business, not the layout's. Only the last field is
+    # kept, as the proof that the row really has all nine columns.
+    local category label dock_label cell_icon sidecar_subdock sidecar_sound cell_payload
+    declare -A position=()
+
+    while IFS=$'\t' read -r category label sidecar_subdock dock_label cell_icon \
+        _ _ cell_payload sidecar_sound; do
+        [[ -z "${category:-}" || "$category" == \#* ]] && continue
+        [[ -n "${sidecar_sound:-}" ]] || continue
+
+        local index=$(( ${position[$sidecar_subdock]:-0} + 1 ))
+        # Step over any Order a sub-dock container already owns. Only the main
+        # dock shares its namespace with the containers; a cell inside a sub-dock
+        # is numbered within that sub-dock and cannot collide with one.
+        if [[ "$sidecar_subdock" == "_MainDock_" ]]; then
+            while [[ -n "${main_dock_taken[$index]:-}" ]]; do
+                index=$(( index + 1 ))
+            done
+        fi
+        position[$sidecar_subdock]=$index
+
+        # A group divider inside a sub-dock. It occupies a position slot like any
+        # other cell so the cells after it keep their intended order, but it runs
+        # nothing and has no registry identity. Label carries the name of the
+        # group that FOLLOWS it, which is documentation for whoever edits the TSV
+        # and is also what `export` writes back.
+        if [[ "$category" == "$SEPARATOR_CATEGORY" ]]; then
+            local sep_prefix
+            if [[ "$sidecar_subdock" == "_MainDock_" ]]; then
+                sep_prefix="$(printf '%03d' "$index")-main"
+            else
+                sep_prefix="$(printf '%03d' "$index")-$(slugify "$sidecar_subdock")"
+            fi
+            if ! emit_separator "$sidecar_subdock" "$index" \
+                "${out_dir}/${sep_prefix}-separator-$(slugify "${label:-group}").desktop" \
+                "${label:-Group}"; then
+                return 1
+            fi
+            separators=$((separators + 1))
+            continue
+        fi
+
+        # The cell passes its own displayed name as a third argument. A
+        # (Category, Label) pair may sit in several sub-docks under different
+        # names, and the runner's side-car lookup returns only the first match,
+        # so without this every such cell would announce the first one's name.
+        # A COMMAND WINDOW CELL. Category _WINDOW_ means the Label is the name of
+        # a kodachi-command-window definition rather than a registry action, so
+        # the cell opens a control surface instead of firing one fixed command.
+        #
+        # It bypasses the action runner on purpose. The runner resolves a
+        # (Category, Label) pair against menu-actions.sh, which is shared with
+        # the rofi menus and lives in overlays/common, so it is merged into the
+        # headless terminal image too. Putting GTK window entries in there would
+        # ship graphical-only rows onto a machine with no display, which is the
+        # class of mistake that once put 1.2M of dock icons on headless builds.
+        local exec_line
+        if [[ "$category" == "$LAUNCH_CATEGORY" ]]; then
+            # A PLAIN APPLICATION LAUNCHER. Payload is the Exec line verbatim,
+            # copied from the XFCE panel launcher it replaces. It is NOT passed
+            # through the action runner: the runner authenticates and audits
+            # Kodachi actions, and wrapping `veracrypt` in it would demand a
+            # signature check to open a GUI. A row with an empty payload is a
+            # broken row and is refused loudly rather than emitting a launcher
+            # that silently does nothing when clicked.
+            if [[ -z "${cell_payload:-}" || "$cell_payload" == "none" ]]; then
+                log "SKIPPED (${LAUNCH_CATEGORY} row has no Exec in its Payload column): ${label}"
+                # Give the index back. It was consumed above, and a skipped row
+                # that keeps its slot leaves a hole in the Order sequence, which
+                # the collision gate would then read as a phantom position.
+                position[$sidecar_subdock]=$((index - 1))
+                continue
+            fi
+            exec_line="$cell_payload"
+        elif [[ "$category" == "_WINDOW_" ]]; then
+            exec_line="${COMMAND_WINDOW} $(shell_quote "$label")"
+        else
+            exec_line="${ACTION_RUNNER} $(shell_quote "$category") $(shell_quote "$label") $(shell_quote "$dock_label")"
+        fi
+
+        local prefix
+        if [[ "$sidecar_subdock" == "_MainDock_" ]]; then
+            # Main dock cells sit ahead of every sub-dock, which start at 10.
+            prefix="$(printf '%03d' "$index")-main"
+        else
+            prefix="$(printf '%03d' "$index")-$(slugify "$sidecar_subdock")"
+        fi
+
+        if ! emit_launcher "$sidecar_subdock" "$dock_label" "$cell_icon" \
+            "$exec_line" "$index" \
+            "${out_dir}/${prefix}-$(slugify "$dock_label").desktop"; then
+            return 1
+        fi
+        launchers=$((launchers + 1))
+    done <"$ACTIONS_FILE"
+
+    printf '%d %d %d\n' "$containers" "$launchers" "$separators"
+}
+
+# ── Backup ────────────────────────────────────────────────────
+# Nothing is deleted. The outgoing layout is moved aside with a manifest that
+# records where it came from and when, so it can be put back by hand.
+
+backup_existing() {
+    LAST_BACKUP_LAUNCHERS=""
+    [[ -d "$LAUNCHER_DIR" ]] || return 0
+
+    local existing
+    existing="$(find "$LAUNCHER_DIR" -maxdepth 1 -type f -name '*.desktop' | wc -l)"
+    if [[ "$existing" -eq 0 && -z "$(find "$LAUNCHER_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+        rmdir "$LAUNCHER_DIR"
+        return 0
+    fi
+
+    # A bare UTC-second stamp collides when the generator runs twice inside the
+    # same second: the second `mv` would nest launchers/launchers and overwrite
+    # the first RESTORE.txt. mktemp -d guarantees a fresh directory.
+    local stamp target
+    stamp="$(date -u +%Y-%m-%dT%H%M%SZ)"
+    mkdir -p "$BACKUP_ROOT"
+    target="$(mktemp -d "${BACKUP_ROOT}/launchers-${stamp}-XXXX")"
+
+    mv "$LAUNCHER_DIR" "${target}/launchers"
+    LAST_BACKUP_LAUNCHERS="${target}/launchers"
+
+    {
+        printf 'Kodachi dock layout backup\n'
+        printf 'Taken:        %s\n' "$stamp"
+        printf 'Origin:       %s\n' "$LAUNCHER_DIR"
+        printf 'Files:        %s\n' "$existing"
+        printf '\n'
+        printf 'To restore, move the current layout aside first, then move this\n'
+        printf 'one back. Do not delete anything:\n'
+        printf '  mv %s %s.superseded\n' "$LAUNCHER_DIR" "$LAUNCHER_DIR"
+        printf '  mv %s/launchers %s\n' "$target" "$LAUNCHER_DIR"
+        printf '  systemctl --user restart kodachi-dock\n'
+    } >"${target}/RESTORE.txt"
+
+    log "Backed up ${existing} launcher file(s) to ${target}"
+}
+
+# ── Export: reverse generation ────────────────────────────────
+# The dock GUI is already a good layout editor. Dragging a cell into another
+# sub-dock rewrites its Container=, reordering rewrites its Order=. What the GUI
+# cannot do is feed that back into the two TSVs the ISO is built from, so until
+# now a rearrangement made on a desktop had to be repeated by hand in the TSVs.
+#
+# `export` closes that loop: it reads the live launcher set and rewrites both
+# TSVs from it. The declarative inputs stay the source of truth, so the image's
+# first-login generator keeps working, while the mouse becomes the editor.
+#
+# Four columns of dock-actions.tsv have no representation in a .desktop file:
+# NeedsAuth, Timeout, Payload and Sound. Those are carried over from the current
+# row, keyed on (Category, Label). A cell with no current row is REPORTED and
+# given conservative defaults rather than silently invented.
+
+readonly EXPORT_DEFAULT_NEEDS_AUTH="0"
+readonly EXPORT_DEFAULT_TIMEOUT="300"
+readonly EXPORT_DEFAULT_PAYLOAD="none"
+readonly EXPORT_DEFAULT_SOUND="1"
+
+declare -A DESKTOP_FIELD=()
+
+# Reads every key of one .desktop in a single pass. The generator is
+# deliberately fork-free (see slugify); re-reading 268 files once per key would
+# be 1340 passes to collect 1340 values. First occurrence wins, which also makes
+# a commented-out example key harmless.
+read_desktop() {
+    local file="$1" line key
+    DESKTOP_FIELD=()
+    while IFS= read -r line; do
+        [[ -z "$line" || "$line" == \#* || "$line" != *=* ]] && continue
+        key="${line%%=*}"
+        [[ -n "${DESKTOP_FIELD[$key]+set}" ]] && continue
+        DESKTOP_FIELD["$key"]="${line#*=}"
+    done <"$file"
+}
+
+# Splits an Exec line into its arguments, into the array named by $2.
+#
+# shell_quote() emits POSIX single-quoted words including the '\'' form for an
+# embedded apostrophe, so splitting on whitespace and splitting on quotes are
+# both wrong for a label like "Don't Track Me". This walks the string once and
+# concatenates quoted and unquoted segments within a word, which is what the
+# shell itself does, without handing the string to eval.
+split_exec_args() {
+    local __split_input="$1"
+    local -n __split_out="$2"
+    __split_out=()
+
+    # Every advance is written as an assignment, never as a bare `((i++))`.
+    # Under `set -e` a post-increment evaluates to the OLD value, so the very
+    # first `((i++))` from zero returns status 1 and aborts the whole script.
+    local __i=0 __n=${#__split_input} __ch __word
+    while ((__i < __n)); do
+        while ((__i < __n)) && [[ "${__split_input:__i:1}" == " " ]]; do
+            __i=$((__i + 1))
+        done
+        ((__i < __n)) || break
+        __word=""
+        while ((__i < __n)); do
+            __ch="${__split_input:__i:1}"
+            [[ "$__ch" == " " ]] && break
+            if [[ "$__ch" == "'" ]]; then
+                __i=$((__i + 1))
+                while ((__i < __n)) && [[ "${__split_input:__i:1}" != "'" ]]; do
+                    __word+="${__split_input:__i:1}"
+                    __i=$((__i + 1))
+                done
+                __i=$((__i + 1))
+            elif [[ "$__ch" == "\\" ]]; then
+                __i=$((__i + 1))
+                if ((__i < __n)); then
+                    __word+="${__split_input:__i:1}"
+                    __i=$((__i + 1))
+                fi
+            else
+                __word+="$__ch"
+                __i=$((__i + 1))
+            fi
+        done
+        __split_out+=("$__word")
+    done
+}
+
+# Both TSVs separate their licence/description header from their data with a run
+# of exactly two blank lines, and nothing inside the data uses one. That makes
+# the boundary unambiguous, so the header is carried through verbatim instead of
+# being re-templated (which would drop any note the author added to it).
+emit_header_of() {
+    local source_file="$1" target="$2"
+    local -a lines=()
+    local line index count
+
+    while IFS= read -r line; do lines+=("$line"); done <"$source_file"
+    count=${#lines[@]}
+
+    for ((index = 0; index + 1 < count; index++)); do
+        if [[ -z "${lines[index]}" && -z "${lines[index + 1]}" ]]; then
+            local write
+            for ((write = 0; write < index; write++)); do
+                printf '%s\n' "${lines[write]}" >>"$target"
+            done
+            return 0
+        fi
+    done
+
+    fatal "cannot find the header boundary (two blank lines) in ${source_file}"
+}
+
+# Captures the single comment line that introduces each sub-dock group, so a
+# regenerated file keeps the author's wording ("# Main dock: the seven cells you
+# click every day") rather than replacing it with a bare "# _MainDock_".
+declare -A EXPORT_GROUP_COMMENT=()
+declare -A EXPORT_POLICY=()
+
+load_current_actions() {
+    local line pending_comment="" category label rest
+
+    while IFS= read -r line; do
+        if [[ "$line" == \#* ]]; then
+            pending_comment="$line"
+            continue
+        fi
+        if [[ -z "$line" ]]; then
+            continue
+        fi
+
+        IFS=$'\t' read -r category label rest <<<"$line"
+        [[ -n "${rest:-}" ]] || continue
+
+        local subdock needs_auth timeout payload sound
+        IFS=$'\t' read -r _ _ subdock _ _ needs_auth timeout payload sound \
+            <<<"$line"
+
+        if [[ -n "$pending_comment" ]]; then
+            EXPORT_GROUP_COMMENT["$subdock"]="$pending_comment"
+            pending_comment=""
+        fi
+
+        EXPORT_POLICY["${category}"$'\t'"${label}"]="${needs_auth}"$'\t'"${timeout}"$'\t'"${payload}"$'\t'"${sound}"
+    done <"$ACTIONS_FILE"
+}
+
+verb_export() {
+    local out_dir="" dry_run=0
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --to)
+                out_dir="${2:-}"
+                [[ -n "$out_dir" ]] || fatal "--to needs a directory"
+                shift 2
+                ;;
+            --dry-run) dry_run=1; shift ;;
+            *) fatal "export: unknown option: $1" ;;
+        esac
+    done
+
+    require_inputs
+    [[ -d "$LAUNCHER_DIR" ]] || fatal "no live layout to export from: ${LAUNCHER_DIR}"
+
+    local live_count
+    live_count="$(find "$LAUNCHER_DIR" -maxdepth 1 -type f -name '*.desktop' | wc -l)"
+    [[ "$live_count" -gt 0 ]] || fatal "no launcher files in ${LAUNCHER_DIR}"
+
+    load_current_actions
+
+    local work
+    work="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '${work}'" EXIT
+
+    # ── Read the live layout ──────────────────────────────────
+    local -a container_order_keys=()
+    local -A container_icon=() container_render=()
+    local sequence=0 foreign=0 unknown=0
+
+    local file
+    while IFS= read -r file; do
+        read_desktop "$file"
+        sequence=$((sequence + 1))
+
+        local entry_type="${DESKTOP_FIELD[Type]:-}"
+        local order="${DESKTOP_FIELD[Order]:-0}"
+
+        if [[ "$entry_type" == "Container" ]]; then
+            local name="${DESKTOP_FIELD[Name]:-}"
+            [[ -n "$name" ]] || continue
+            container_icon["$name"]="${DESKTOP_FIELD[Icon]:-}"
+            container_render["$name"]="${DESKTOP_FIELD[render]:-1}"
+            container_order_keys+=("${order}"$'\t'"${sequence}"$'\t'"${name}")
+            continue
+        fi
+
+        # A separator has no Exec and no Name. Without this branch it would fall
+        # through the "no Exec" guard below and be silently DROPPED, so a single
+        # export would erase every group divider from the source of truth while
+        # the live dock still showed them. The group name is recovered from the
+        # filename this generator wrote; a separator added by hand through the
+        # cairo-dock GUI has no name to recover and becomes an unnamed group.
+        if [[ "$entry_type" == "Separator" ]]; then
+            local sep_name base
+            base="$(basename "$file" .desktop)"
+            if [[ -n "${DESKTOP_FIELD[Name]:-}" ]]; then
+                # Written by emit_separator for exactly this purpose, so the
+                # label survives a build/export cycle byte for byte. Preferred
+                # over the filename because slugify() is not invertible: it
+                # turns every space, ampersand and slash into the same hyphen.
+                # The two branches below stay as the fallback for a separator
+                # cairo-dock wrote itself, or one this generator emitted before
+                # the Name line existed.
+                sep_name="${DESKTOP_FIELD[Name]}"
+            elif [[ "$base" == *-separator-* ]]; then
+                sep_name="${base##*-separator-}"
+                # The name survives only as a slugified filename, so it comes
+                # back lowercased and a build/export/build cycle renames
+                # "Applications" to "applications". Restore the initial capital
+                # so the round-trip is stable rather than slowly degrading.
+                sep_name="${sep_name^}"
+            else
+                # CAPITALISED, so the FIRST export of a hand-added separator is
+                # already the fixed point. Lowercase "group" here made export
+                # non-idempotent by one round: pass 1 wrote `group`, build wrote
+                # the file `...-separator-group.desktop`, and pass 2 recovered
+                # the name from that filename and applied the ^ restore above,
+                # yielding `Group`. Measured on <lab-host> after the
+                # operator added a divider through the cairo-dock GUI: two
+                # identical exports of an unchanged dock produced different TSVs.
+                sep_name="Group"
+            fi
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "${DESKTOP_FIELD[Container]:-_MainDock_}" "$order" "$sequence" \
+                "$SEPARATOR_CATEGORY" "$sep_name" \
+                "${DESKTOP_FIELD[Container]:-_MainDock_}" "$sep_name" "-" \
+                >>"${work}/cells"
+            continue
+        fi
+
+        local exec_line="${DESKTOP_FIELD[Exec]:-}"
+        [[ -n "$exec_line" ]] || continue
+
+        local -a parts=()
+        split_exec_args "$exec_line" parts
+
+        # A launcher the user dragged in from the applications menu is a real
+        # dock cell but has no registry identity, so it cannot become a
+        # dock-actions row. Naming it is the point: silently dropping it would
+        # make the exported dock quietly different from the one on screen.
+        #
+        # THREE CELL SHAPES REACH THIS POINT, NOT ONE. Testing only for the
+        # action runner silently dropped every command-window cell and every
+        # application launcher, so `export` would have rewritten the TSV with
+        # 10 windows and 77 launchers missing and reported them only as
+        # "SKIPPED (not a Kodachi action cell)" in the log. The export is what
+        # captures a dock the user rearranged by hand, so losing rows here
+        # deletes their arrangement.
+        local category label cell_payload_out="none"
+        if [[ "${parts[0]:-}" == "$COMMAND_WINDOW" ]]; then
+            category="_WINDOW_"
+            label="${parts[1]:-}"
+        elif [[ "${parts[0]:-}" == "$ACTION_RUNNER" ]]; then
+            category="${parts[1]:-}"
+            label="${parts[2]:-}"
+        elif [[ -n "${parts[0]:-}" ]]; then
+            # An ordinary application: either one this generator wrote from a
+            # _LAUNCH_ row, or one the user dragged in from the applications
+            # menu. Both round-trip as _LAUNCH_ with the Exec preserved, so a
+            # dock the user customised survives an export/build cycle.
+            category="$LAUNCH_CATEGORY"
+            label="$(slugify "${DESKTOP_FIELD[Name]:-${parts[0]}}")"
+            cell_payload_out="$exec_line"
+        else
+            log "SKIPPED (empty Exec): $(basename "$file")"
+            foreign=$((foreign + 1))
+            continue
+        fi
+
+        if [[ -z "$category" || -z "$label" ]]; then
+            log "SKIPPED (Exec has no Category/Label): $(basename "$file")"
+            foreign=$((foreign + 1))
+            continue
+        fi
+
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "${DESKTOP_FIELD[Container]:-_MainDock_}" "$order" "$sequence" \
+            "$category" "$label" "${DESKTOP_FIELD[Container]:-_MainDock_}" \
+            "${DESKTOP_FIELD[Name]:-$label}" "${DESKTOP_FIELD[Icon]:-}" \
+            "$cell_payload_out" \
+            >>"${work}/cells"
+    done < <(find "$LAUNCHER_DIR" -maxdepth 1 -type f -name '*.desktop' | sort)
+
+    [[ -s "${work}/cells" ]] || fatal "no Kodachi action cells found in ${LAUNCHER_DIR}"
+
+    # ── dock-layout.tsv ───────────────────────────────────────
+    local layout_out="${out_dir:+${out_dir}/dock-layout.tsv}"
+    layout_out="${layout_out:-$LAYOUT_FILE}"
+    local layout_tmp="${work}/dock-layout.tsv"
+
+    emit_header_of "$LAYOUT_FILE" "$layout_tmp"
+    printf '\n\n' >>"$layout_tmp"
+
+    # ── RENUMBER THE WHOLE MAIN DOCK AS ONE INTEGER SEQUENCE ──
+    #
+    # Writing the live Order back verbatim looks like the faithful thing to do
+    # and is the reason the round trip was broken. Cairo-dock writes a FRACTION
+    # when a launcher is dropped between two others (5.625, 5.6875, 5.75 ... is
+    # a real capture from the operator's dock on 2026-08-19), and those values
+    # are meaningful only against the neighbours that existed at drop time. The
+    # cells beside them do NOT keep an absolute Order at all: they are renumbered
+    # 1..k from their position in dock-actions.tsv on every build. So preserving
+    # absolute values for one half of a shared namespace and relative positions
+    # for the other half cannot round-trip, and it did not: eight containers
+    # captured at 5.6..5.99 came back between Identity and Devices.
+    #
+    # Both halves are therefore renumbered together here, from ONE walk of the
+    # merged main-dock sequence. A container is written the integer slot it
+    # actually occupies, and generate_into() steps the cell counter over exactly
+    # those integers, so build(export(build(X))) == build(X).
+    #
+    # It also ends the `printf: 5.9921875: invalid number` that a fractional
+    # Order produced in the container filename prefix, which was reported on
+    # stderr while the build carried on and exited 0.
+    local -A container_slot=()
+    local _ord _seq _kind _nm _slot=0
+    while IFS=$'\t' read -r _ord _seq _kind _nm; do
+        _slot=$((_slot + 1))
+        [[ "$_kind" == "C" ]] && container_slot["$_nm"]=$_slot
+    done < <(
+        {
+            printf '%s\n' "${container_order_keys[@]}" \
+                | while IFS=$'\t' read -r _ord _seq _nm; do
+                    [[ -n "${_nm:-}" ]] && printf '%s\t%s\tC\t%s\n' "$_ord" "$_seq" "$_nm"
+                  done
+            awk -F'\t' '$1 == "_MainDock_" { printf "%s\t%s\tA\t\n", $2, $3 }' "${work}/cells"
+        } | sort -t$'\t' -k1,1g -k2,2n
+    )
+
+    local -a subdock_sequence=()
+    local row name order
+    while IFS=$'\t' read -r order _ name; do
+        subdock_sequence+=("$name")
+        printf '%s\t%s\t%s\t%s\n' "$name" "${container_slot[$name]:-$order}" \
+            "${container_icon[$name]}" "${container_render[$name]}" \
+            >>"$layout_tmp"
+    done < <(printf '%s\n' "${container_order_keys[@]}" \
+        | sort -t$'\t' -k1,1g -k2,2n)
+
+    # ── dock-actions.tsv ──────────────────────────────────────
+    local actions_out="${out_dir:+${out_dir}/dock-actions.tsv}"
+    actions_out="${actions_out:-$ACTIONS_FILE}"
+    local actions_tmp="${work}/dock-actions.tsv"
+
+    emit_header_of "$ACTIONS_FILE" "$actions_tmp"
+    printf '\n\n' >>"$actions_tmp"
+
+    # A cell whose Container names no sub-dock that exists cannot be grouped by
+    # the layout, and cairo-dock would not show it either. It is emitted last
+    # under its own heading so the row survives and the problem is visible.
+    local -a orphan_groups=()
+    local group
+    while IFS= read -r group; do
+        [[ "$group" == "_MainDock_" ]] && continue
+        local known=0 candidate
+        for candidate in "${subdock_sequence[@]}"; do
+            [[ "$candidate" == "$group" ]] && { known=1; break; }
+        done
+        [[ "$known" -eq 0 ]] && orphan_groups+=("$group")
+    done < <(cut -f1 "${work}/cells" | sort -u)
+
+    local first_group=1
+    for group in "_MainDock_" "${subdock_sequence[@]}" "${orphan_groups[@]+"${orphan_groups[@]}"}"; do
+        local -a group_rows=()
+        while IFS= read -r row; do group_rows+=("$row"); done < <(
+            awk -F'\t' -v want="$group" '$1 == want' "${work}/cells" \
+                | sort -t$'\t' -k2,2g -k3,3n \
+                | cut -f4-
+        )
+        [[ ${#group_rows[@]} -gt 0 ]] || continue
+
+        [[ "$first_group" -eq 1 ]] || printf '\n' >>"$actions_tmp"
+        first_group=0
+        printf '%s\n' "${EXPORT_GROUP_COMMENT[$group]:-# ${group}}" >>"$actions_tmp"
+
+        local category label subdock dock_label icon policy cell_payload
+        for row in "${group_rows[@]}"; do
+            IFS=$'\t' read -r category label subdock dock_label icon cell_payload <<<"$row"
+            if [[ "$category" == "$SEPARATOR_CATEGORY" ]]; then
+                # A divider has no auth, no timeout, no payload and no sound. Its
+                # policy is fixed rather than looked up, otherwise every export
+                # would report it as an unknown new cell.
+                printf '%s\t%s\t%s\t%s\t%s\t0\t0\tnone\t0\n' \
+                    "$category" "$label" "$subdock" "$dock_label" "-" \
+                    >>"$actions_tmp"
+                continue
+            fi
+            if [[ "$category" == "$LAUNCH_CATEGORY" ]]; then
+                # No auth, no timeout, no sound: the Payload IS the command.
+                printf '%s\t%s\t%s\t%s\t%s\t0\t0\t%s\t0\n' \
+                    "$category" "$label" "$subdock" "$dock_label" "$icon" \
+                    "${cell_payload:-none}" >>"$actions_tmp"
+                continue
+            fi
+            policy="${EXPORT_POLICY["${category}"$'\t'"${label}"]:-}"
+            if [[ -z "$policy" ]]; then
+                log "NEW CELL (no current row, defaults applied): ${category} / ${label}"
+                unknown=$((unknown + 1))
+                policy="${EXPORT_DEFAULT_NEEDS_AUTH}"$'\t'"${EXPORT_DEFAULT_TIMEOUT}"$'\t'"${EXPORT_DEFAULT_PAYLOAD}"$'\t'"${EXPORT_DEFAULT_SOUND}"
+            fi
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "$category" "$label" "$subdock" "$dock_label" "$icon" "$policy" \
+                >>"$actions_tmp"
+        done
+    done
+
+    # ── Report and place ──────────────────────────────────────
+    local cell_total
+    cell_total="$(wc -l <"${work}/cells")"
+    log "Read ${live_count} launcher file(s): ${#subdock_sequence[@]} sub-dock(s), ${cell_total} action cell(s)."
+    [[ "$foreign" -eq 0 ]] || log "Skipped ${foreign} launcher(s) that are not Kodachi action cells."
+    [[ "$unknown" -eq 0 ]] || log "${unknown} cell(s) had no current row and took default auth/timeout/payload/sound."
+    [[ ${#orphan_groups[@]} -eq 0 ]] || log "WARNING: ${#orphan_groups[@]} cell group(s) name a sub-dock with no container: ${orphan_groups[*]}"
+
+    local changed=0
+    diff -q "$LAYOUT_FILE" "$layout_tmp" >/dev/null 2>&1 || changed=1
+    diff -q "$ACTIONS_FILE" "$actions_tmp" >/dev/null 2>&1 || changed=1
+
+    if [[ "$dry_run" -eq 1 ]]; then
+        if [[ "$changed" -eq 0 ]]; then
+            log "No change: the live dock already matches the TSV inputs."
+        else
+            log "Would change:"
+            diff -u "$LAYOUT_FILE" "$layout_tmp" || true
+            diff -u "$ACTIONS_FILE" "$actions_tmp" || true
+        fi
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$layout_out")" "$(dirname "$actions_out")"
+    # Same-filesystem rename keeps a reader from ever seeing a half-written TSV.
+    cp -f "$layout_tmp" "${layout_out}.new" && mv -f "${layout_out}.new" "$layout_out"
+    cp -f "$actions_tmp" "${actions_out}.new" && mv -f "${actions_out}.new" "$actions_out"
+
+    log "Wrote ${layout_out}"
+    log "Wrote ${actions_out}"
+    [[ "$changed" -eq 0 ]] && log "(content unchanged: the live dock already matched)"
+    return 0
+}
+
+# ── Verbs ─────────────────────────────────────────────────────
+
+# NO CALLER, ON PURPOSE, AND IT MUST NOT BE REWIRED INTO `--if-missing`.
+#
+# This was the second half of the old first-login test, `existing_filenames ==
+# staged_filenames`. That comparison is exactly what made the generator revert a
+# user's dock: the dock's own GUI changes the filename population on every icon
+# add or remove, so the digest differed and the whole layout was regenerated,
+# taking their reorders with it (see verb_build below for the measurement).
+#
+# The function itself is correct and cheap, so it is kept rather than deleted in
+# case a future `verify` or `export` arm wants a stable fingerprint of a
+# directory. What it must never again be is a first-login TRIGGER: a filename
+# population is the user's business, not evidence of a broken generation.
+desktop_filename_digest() {
+    find "$1" -maxdepth 1 -type f -name '*.desktop' -printf '%f\n' \
+        | LC_ALL=C sort \
+        | sha256sum \
+        | awk '{print $1}'
+}
+
+# IS THIS AN INTERRUPTED GENERATION, OR IS IT THE USER'S DOCK?
+#
+# `--if-missing` needs to tell "the last generator died half way" from "the
+# owner edited their dock", and the ONLY difference that survives a legitimate
+# edit is whether the files PARSE. A count and a filename digest do not: both
+# change on every add and every remove the dock's own GUI performs, which is
+# what made --if-missing revert a user's layout (see verb_build below).
+#
+# So this checks structure and nothing else, on the LIVE directory:
+#   * at least one .desktop file, otherwise there is nothing to preserve
+#   * every file non-empty, carrying exactly one [Desktop Entry] header and one
+#     populated Type= field
+# A launcher the user added by hand through the GUI satisfies all of that; a
+# file truncated by a generator killed mid-write does not.
+#
+# It deliberately does NOT check the version header, Container, Order or Icon
+# Type: a hand-added launcher is not required to carry Kodachi's generator
+# fields, and demanding them would re-create the very bug this replaces by
+# calling the user's own icon "incomplete generated state".
+layout_is_structurally_sound() {
+    local directory="$1" launcher count=0 type_count type_value
+    [[ -d "$directory" ]] || return 1
+    while IFS= read -r -d '' launcher; do
+        count=$((count + 1))
+        if [[ ! -s "$launcher" ]]; then
+            log "Dock layout repair: empty launcher $(basename "$launcher")"
+            return 1
+        fi
+        if [[ "$(grep -cFx '[Desktop Entry]' "$launcher" || true)" -ne 1 ]]; then
+            log "Dock layout repair: $(basename "$launcher") has no single [Desktop Entry] header"
+            return 1
+        fi
+        type_count="$(grep -c '^Type=' "$launcher" || true)"
+        type_value="$(grep -m1 '^Type=' "$launcher" || true)"
+        type_value="${type_value#*=}"
+        if [[ "$type_count" -ne 1 || -z "$type_value" ]]; then
+            log "Dock layout repair: $(basename "$launcher") has no populated Type= field"
+            return 1
+        fi
+    done < <(find "$directory" -maxdepth 1 -type f -name '*.desktop' -print0 | sort -z)
+    [[ "$count" -gt 0 ]]
+}
+
+validate_generated_population() {
+    local directory="$1" expected="$2" actual launcher first_line field field_count field_value
+    local type icon_type required_icon_type exec_count exec_value
+    local -a required_fields=("Container" "Name" "Order" "Icon Type" "Type")
+    actual="$(find "$directory" -maxdepth 1 -type f -name '*.desktop' | wc -l)"
+    if [[ "$actual" -ne "$expected" ]]; then
+        log "ERROR: staged dock layout has ${actual} desktop files; expected ${expected}"
+        return 1
+    fi
+
+    while IFS= read -r -d '' launcher; do
+        if [[ ! -s "$launcher" ]]; then
+            log "ERROR: staged launcher is empty: $(basename "$launcher")"
+            return 1
+        fi
+        IFS= read -r first_line <"$launcher" || true
+        if [[ "$first_line" != "#${CAIRO_VERSION}" ]]; then
+            log "ERROR: staged launcher has wrong version header: $(basename "$launcher")"
+            return 1
+        fi
+        if [[ "$(grep -cFx '[Desktop Entry]' "$launcher" || true)" -ne 1 ]]; then
+            log "ERROR: staged launcher requires one Desktop Entry header: $(basename "$launcher")"
+            return 1
+        fi
+        for field in "${required_fields[@]}"; do
+            field_count="$(grep -c "^${field}=" "$launcher" || true)"
+            field_value="$(grep -m1 "^${field}=" "$launcher" || true)"
+            field_value="${field_value#*=}"
+            if [[ "$field_count" -ne 1 || -z "$field_value" ]]; then
+                log "ERROR: staged launcher requires one populated ${field} field: $(basename "$launcher")"
+                return 1
+            fi
+        done
+
+        type="$(grep -m1 '^Type=' "$launcher")"
+        type="${type#*=}"
+        icon_type="$(grep -m1 '^Icon Type=' "$launcher")"
+        icon_type="${icon_type#*=}"
+        case "$type" in
+            Application)
+                required_icon_type=0
+                exec_count="$(grep -c '^Exec=' "$launcher" || true)"
+                exec_value="$(grep -m1 '^Exec=' "$launcher" || true)"
+                exec_value="${exec_value#*=}"
+                if [[ "$exec_count" -ne 1 || -z "$exec_value" ]]; then
+                    log "ERROR: staged application launcher requires one populated Exec field: $(basename "$launcher")"
+                    return 1
+                fi
+                ;;
+            Container) required_icon_type=1 ;;
+            Separator) required_icon_type=2 ;;
+            *)
+                log "ERROR: staged launcher has unsupported Type=${type}: $(basename "$launcher")"
+                return 1
+                ;;
+        esac
+        if [[ "$icon_type" != "$required_icon_type" ]]; then
+            log "ERROR: staged launcher Type=${type} requires Icon Type=${required_icon_type}: $(basename "$launcher")"
+            return 1
+        fi
+    done < <(find "$directory" -maxdepth 1 -type f -name '*.desktop' -print0 | sort -z)
+}
+
+verb_build() {
+    local only_if_missing="${1:-}"
+
+    require_inputs
+
+    if [[ ! -x "$ACTION_RUNNER" ]]; then
+        log "WARNING: action runner not found or not executable at ${ACTION_RUNNER};"
+        log "         generated cells will not work until that is fixed."
+    fi
+
+    # First-run mode, used by the systemd unit's ExecStartPre.
+    #
+    # MOVED ABOVE THE GENERATOR, 2026-09-10, and the measurement is the reason.
+    #
+    # This block used to sit AFTER generate_into and
+    # validate_generated_population, so the one path whose entire purpose is to
+    # do nothing paid for a full build and then deleted it. Measured on a booted
+    # install against a sound 136-file layout: generate_into 2,673ms and
+    # validate_generated_population 22,517ms ran before this block got to say
+    # "leaving it alone", against the 5,219ms the soundness check actually needs.
+    #
+    # At boot under load the unit's ExecStartPre took 71s of its 120s budget
+    # doing that. Under the previous 60s budget it was killed outright, and a
+    # killed ExecStartPre is exactly the dock-came-up-with-no-icons defect the
+    # operator reported. Raising the budget bought headroom; this gives the
+    # headroom back. The unit comment quoted below always promised it
+    # "returns immediately", and now that is true rather than aspirational.
+    # THE UNIT'S CONTRACT IS THE ONE THAT BINDS, AND THIS DID NOT HONOUR IT.
+    # kodachi-dock.service says, in its own comment beside this very call:
+    #
+    #   "--if-missing makes it a first-login action: once a layout exists it
+    #    returns immediately and never touches it, so a user who rearranges
+    #    their dock keeps their arrangement across every restart and every
+    #    upgrade."
+    #
+    # The test used to be `existing == expected && existing_filenames ==
+    # staged_filenames`, i.e. the exact COUNT and the sha256 of the exact
+    # FILENAME SET. Both of those change the moment the user adds or removes an
+    # icon with the dock's own GUI, so the "leave it alone" branch was taken
+    # only while the layout was untouched, and any edit sent it down the
+    # backup-and-regenerate path.
+    #
+    # MEASURED 2026-09-04, throwaway HOME, this generator and these TSVs:
+    #   build --if-missing            -> 136 files
+    #   remove 1 icon, reorder another (Order=11 on bleachbit)
+    #   build --if-missing            -> "Backed up 135 launcher file(s)",
+    #                                    "Wrote 9 sub-dock(s), 123 action
+    #                                    cell(s) and 4 separator(s)"
+    #   after                         -> 136 files, the removed icon BACK, and
+    #                                    the reorder gone with it
+    #   control, no file change       -> "leaving it alone", reorder survives
+    # So the revert was keyed on the filename population alone, and it took the
+    # user's reorders with it because a regeneration rewrites every file. The
+    # only trace was a journal line and a backup directory nothing on screen
+    # mentions. The live ISO masks it (no persistence); an installed user meets
+    # it at their next login.
+    #
+    # NOW: regenerate when there is NO layout, or when the layout that is there
+    # does not PARSE (a generator killed mid-write). Any other population is
+    # the user's dock and is left alone, which is what the unit promises.
+    #
+    # ─── THE RESIDUAL THIS CREATES, STATED PLAINLY ────────────────────────────
+    # THE OLD DIGEST COMPARISON WAS ALSO THE ONLY UPGRADE-DELIVERY PATH FOR DOCK
+    # CELLS, AND REMOVING IT FREEZES AN INSTALLED USER'S DOCK AT THE SET IT WAS
+    # BORN WITH. That is a real cost, not a theoretical one, and it is the other
+    # half of this fix.
+    #
+    # Measured 2026-09-04: this unit's ExecStartPre is the ONLY thing in the
+    # image that runs this generator (kodachi-dock.service:29 says so itself,
+    # and 0063-fix-dock-permissions.hook.chroot only NAMES the binary at :18 and
+    # :235, it never invokes it), and the gui-xfce skel ships
+    # etc/skel/.config/cairo-dock/current_theme/ with cairo-dock.conf,
+    # cairo-dock-simple.conf, images/ and plug-ins/ but NO launchers/ directory
+    # at all. So a fresh account generates its layout here at first login, and
+    # before this change any later release that ADDED or RENAMED a cell changed
+    # the filename population, failed the digest test, and got regenerated. That
+    # accidental regeneration was the delivery mechanism.
+    #
+    # Trading it away is still right: reverting a user's own edits at every
+    # login to deliver a cell is a cure worse than the disease, and it was
+    # silent. But the consequence must not be silent either. An installed
+    # account that has run the dock once will not receive a new cell added in a
+    # later release. The live ISO does not show this (no persistence), exactly
+    # as it did not show the revert.
+    #
+    # NOT SOLVED HERE, deliberately, because a delivery mechanism is a product
+    # decision and not a bug fix. Whoever takes it should note the shape: the
+    # answer is a MERGE keyed on generator provenance, adding only cells the
+    # user has never seen and never touching a file they have moved, not a
+    # regeneration. `export` already round-trips user-added launchers as
+    # `_LAUNCH_` rows, which is the half of that machinery that already exists.
+    # TRADE MADE HERE, AND IT IS NOT FREE. Returning before the generator means a
+    # broken generator, or a dock-layout.tsv corrupted by an upgrade, is no longer
+    # exercised at login on any machine that already has a sound layout. The old
+    # ordering ran the generator every time, so a corrupted input produced a
+    # `fatal` and left an ERROR: line in the journal: a swallowed exit, but a
+    # visible message, and in practice the only routine canary for that state.
+    # That canary is gone. It is the right trade, because spending 25s of a 120s
+    # budget on work that is then deleted is what killed the dock in the field,
+    # and because `verify` and `build` (without --if-missing) still exercise the
+    # generator on demand. Whoever adds an upgrade path for the TSVs should not
+    # rely on login to notice they are broken.
+    if [[ "$only_if_missing" == "--if-missing" ]]; then
+        local existing=0
+        if [[ -d "$LAUNCHER_DIR" ]]; then
+            existing="$(find "$LAUNCHER_DIR" -maxdepth 1 -type f -name '*.desktop' | wc -l)"
+        fi
+        if [[ "$existing" -gt 0 ]] && layout_is_structurally_sound "$LAUNCHER_DIR"; then
+            log "Dock layout already present (${existing} files), leaving it alone."
+            return 0
+        fi
+        if [[ "$existing" -eq 0 ]]; then
+            log "No dock layout found, generating the default one."
+        else
+            log "Dock layout found (${existing} files) but it does not parse, repairing it from the generated set."
+        fi
+    fi
+
+    # Generate the complete replacement before moving the live directory. A
+    # failed generator therefore cannot leave a partial live layout that every
+    # later --if-missing run mistakes for a completed first-login build.
+    mkdir -p "$THEME_DIR"
+    local staging=""
+    staging="$(mktemp -d "${THEME_DIR}/.launchers.new.XXXXXX")"
+    trap '[[ -z "${staging:-}" || ! -d "$staging" ]] || rm -rf -- "$staging"' EXIT
+
+    local counts containers launchers separators expected
+    if ! counts="$(generate_into "$staging")"; then
+        fatal "could not generate the complete dock layout in staging"
+    fi
+    read -r containers launchers separators <<<"$counts"
+    expected=$((containers + launchers + separators))
+    if ! validate_generated_population "$staging" "$expected"; then
+        fatal "staged dock layout failed population validation"
+    fi
+
+    backup_existing
+    if ! mv "$staging" "$LAUNCHER_DIR"; then
+        if [[ -n "$LAST_BACKUP_LAUNCHERS" && -d "$LAST_BACKUP_LAUNCHERS" && ! -e "$LAUNCHER_DIR" ]]; then
+            mv "$LAST_BACKUP_LAUNCHERS" "$LAUNCHER_DIR" \
+                || log "ERROR: replacement and automatic backup restore both failed"
+        fi
+        fatal "could not install the complete staged dock layout"
+    fi
+    staging=""
+    trap - EXIT
+
+    log "Wrote ${containers} sub-dock(s), ${launchers} action cell(s) and ${separators} separator(s) to ${LAUNCHER_DIR}"
+    log "Reload the dock with: systemctl --user restart kodachi-dock"
+}
+
+# Proves the generator is idempotent WITHOUT disturbing the live layout: two
+# independent generations into temporary directories must be byte-identical.
+verb_verify() {
+    require_inputs
+
+    local first second
+    first="$(mktemp -d)"
+    second="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '${first}' '${second}'" EXIT
+
+    # Run each generation in its OWN process. Generating twice inside this shell
+    # shares every variable, associative array and RANDOM state, so it could not
+    # detect process-level nondeterminism, which is exactly what an idempotency
+    # check is for.
+    ( generate_into "$first" >/dev/null )
+    ( generate_into "$second" >/dev/null )
+
+    if diff -r "$first" "$second" >/dev/null 2>&1; then
+        local count
+        count="$(find "$first" -type f -name '*.desktop' | wc -l)"
+        log "Reproducible: two runs produced ${count} identical file(s)."
+        return 0
+    fi
+
+    log "NOT reproducible: the two runs differ."
+    diff -r "$first" "$second" | head -n 20
+    return 1
+}
+
+verb_list() {
+    require_inputs
+    printf '%-20s %8s %11s\n' "SUB-DOCK" "CELLS" "SEPARATORS"
+    awk -F'\t' -v sep="$SEPARATOR_CATEGORY" '
+        /^#/ { next }
+        NF >= 9 {
+            docks[$3] = 1
+            if ($1 == sep) { seps[$3]++ } else { count[$3]++ }
+        }
+        END {
+            for (dock in docks)
+                printf "%-20s %8d %11d\n", dock, count[dock] + 0, seps[dock] + 0
+        }
+    ' "$ACTIONS_FILE" | sort
+}
+
+show_usage() {
+    cat <<'USAGE'
+Kodachi Dock Control - Layout Generator
+
+Usage:
+  kodachi-dock-build build                Generate the launcher set (backs up the old one)
+  kodachi-dock-build build --if-missing   Generate only when no layout exists yet.
+                                          This is what the kodachi-dock systemd
+                                          user unit runs, so a fresh account gets
+                                          a populated dock on first login without
+                                          ever overwriting a customised one.
+  kodachi-dock-build verify               Prove the generator is reproducible, changes nothing
+  kodachi-dock-build list                 Show the sub-docks and their cell counts
+  kodachi-dock-build export [--to DIR]    Rewrite the two TSV inputs FROM the live
+                                          dock, so a layout rearranged with the
+                                          mouse becomes the declarative source
+                                          again. --to writes both files into DIR
+                                          instead of over the installed ones.
+  kodachi-dock-build export --dry-run     Show what export would change, write nothing
+
+Inputs (edit these, never the generated launcher files):
+  /usr/local/share/kodachi/dock/dock-layout.tsv
+  /usr/local/lib/kodachi-rofi/dock-actions.tsv
+
+Round trip:
+  Rearrange the dock with the mouse, then `export` to capture it, then `build`
+  to prove the capture regenerates the same layout.
+USAGE
+}
+
+# ── Entry Point ───────────────────────────────────────────────
+
+main() {
+    case "${1:-}" in
+        build) verb_build "${2:-}" ;;
+        verify) verb_verify ;;
+        list) verb_list ;;
+        export) shift; verb_export "$@" ;;
+        "" | -h | --help) show_usage ;;
+        *)
+            printf 'Unknown verb: %s\n\n' "$1" >&2
+            show_usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.1",
+  "id": "base-dnscrypt-setup",
+  "name": "base-dnscrypt-setup",
+  "description": "Base profile: Configure and verify DNSCrypt for encrypted DNS queries. Include this for terminal setup workflows requiring DNSCrypt.",
+  "metadata": {
+    "created": "2025-10-22T00:00:00Z",
+    "modified": "2025-10-22T00:00:00Z",
+    "version": "1.0"
+  },
+  "global_settings": {
+    "kill_policy": "stop",
+    "continue_policy": true,
+    "max_log_size": 10485760,
+    "default_timeout": 300,
+    "working_dir": "."
+  },
+  "steps": [
+    {
+      "id": 1,
+      "type": "command",
+      "cmd": "dns-switch dnscrypt",
+      "description": "Show DNSCrypt status (read-only: it changes nothing, so --no-action does nothing here)",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "dns",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.dns-switch.dnscrypt",
+      "argv": [
+        "/opt/kodachi/dashboard/hooks/dns-switch",
+        "dnscrypt"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "command",
+      "cmd": "sudo dns-switch switch --names dnscrypt",
+      "description": "Switch DNS to a specific category or provider",
+      "condition": {
+        "type": "if_state",
+        "state": "dnscrypt",
+        "expect": false
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "dns",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Switch DNS to a specific category or provider",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.dns-switch.switch",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/dns-switch",
+        "switch",
+        "--names",
+        "dnscrypt"
+      ]
+    }
+  ]
+}

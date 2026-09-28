@@ -5,8 +5,8 @@ receives no updates and no security fixes, and it should not be deployed.** It i
 historical record, and because the shell and Gambas sources show how Kodachi worked before
 the Rust rewrite.
 
-For a system you can actually run, see **[../Kodachi-OS-9-stable](../Kodachi-OS-9-stable)** (stable) or
-**[../Kodachi-OS-10-beta](../Kodachi-OS-10-beta)** (current, beta).
+For a system you can actually run, see **[../Kodachi-OS-10-stable](../Kodachi-OS-10-stable)** (current, stable).
+The previous line is kept as a record at **[../Kodachi-OS-9-legacy](../Kodachi-OS-9-legacy)**.
 
 ## Directory Structure
 

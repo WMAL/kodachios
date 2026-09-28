@@ -1,0 +1,289 @@
+{
+  "schema_version": "1.1",
+  "id": "tor-bridges-obfs4-setup",
+  "name": "tor-bridges-obfs4-setup",
+  "description": "Store supplied obfs4 Tor bridge lines through stdin, enable and test them, then confirm Tor reachability.",
+  "metadata": {
+    "created": "2026-06-25T00:00:00Z",
+    "modified": "2026-07-08T00:00:00Z",
+    "version": "1.0"
+  },
+  "global_settings": {
+    "kill_policy": "continue",
+    "continue_policy": true,
+    "max_log_size": 10485760,
+    "default_timeout": 300,
+    "working_dir": "."
+  },
+  "parameters": {
+    "bridge_lines": {
+      "type": "string",
+      "description": "obfs4 bridge line(s) supplied privately to the set-bridges child through stdin.",
+      "required": true
+    },
+    "bridge_mode": {
+      "type": "choice",
+      "description": "Bridge selection mode: 'all' uses every stored bridge, 'random' picks a random subset each rotation",
+      "options": [
+        "all",
+        "random"
+      ],
+      "default": "all",
+      "required": false
+    }
+  },
+  "steps": [
+    {
+      "id": 1,
+      "type": "command",
+      "cmd": "echo '=== TOR obfs4 BRIDGE SETUP ==='",
+      "description": "Run the typed workflow command 'echo '=== TOR obfs4 BRIDGE SETUP ===''.",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Review the step result and restore the prior state before continuing if the command changed system state."
+      },
+      "command_id": "workflow.argv.echo.da3f76ac3fc0dc9e",
+      "argv": [
+        "echo",
+        "=== TOR obfs4 BRIDGE SETUP ==="
+      ]
+    },
+    {
+      "id": 2,
+      "type": "command",
+      "cmd": "sudo tor-switch set-bridge-mode --mode ${bridge_mode}",
+      "description": "Set bridge selection mode: 'all' uses every bridge, 'random' picks a random subset each rotation",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Set bridge selection mode: 'all' uses every bridge, 'random' picks a random subset each rotation",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.tor-switch.set-bridge-mode",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "set-bridge-mode",
+        "--mode",
+        "${bridge_mode}"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "command",
+      "cmd": "sudo tor-switch set-bridges --stdin-bridges",
+      "description": "Store obfs4 bridge lines and activate bridge mode without exposing the bridge payload in argv.",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Store obfs4 bridge lines and activate bridge mode without exposing the bridge payload in argv.",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed.",
+        "stdin_parameter": "bridge_lines"
+      },
+      "command_id": "rust.tor-switch.set-bridges",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "set-bridges",
+        "--stdin-bridges"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "command",
+      "cmd": "sudo tor-switch enable-bridges",
+      "description": "Enable stored bridges for all instances and restart them",
+      "condition": {
+        "type": "if_contains",
+        "pattern": "obfs4"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 3,
+      "colonyops_safety": {
+        "danger_level": "high",
+        "requires_auth": true,
+        "needs_sudo": true,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "Confirm this workflow step before execution: Enable stored bridges for all instances and restart them",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.tor-switch.enable-bridges",
+      "argv": [
+        "/usr/bin/sudo",
+        "-n",
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "enable-bridges"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "command",
+      "cmd": "tor-switch test-bridges",
+      "description": "Validate stored bridge lines and report obfs4proxy availability (read-only)",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.tor-switch.test-bridges",
+      "argv": [
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "test-bridges"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "command",
+      "cmd": "tor-switch list-bridges",
+      "description": "List stored bridge configuration and detected obfs4proxy path",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.tor-switch.list-bridges",
+      "argv": [
+        "/opt/kodachi/dashboard/hooks/tor-switch",
+        "list-bridges"
+      ]
+    },
+    {
+      "id": 7,
+      "type": "command",
+      "cmd": "ip-fetch check-tor",
+      "description": "Check if connection is using Tor network",
+      "condition": {
+        "type": "if_contains",
+        "pattern": "obfs4"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 1,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "tauri-service",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
+      },
+      "command_id": "rust.ip-fetch.check-tor",
+      "argv": [
+        "/opt/kodachi/dashboard/hooks/ip-fetch",
+        "check-tor"
+      ]
+    },
+    {
+      "id": 8,
+      "type": "command",
+      "cmd": "echo 'obfs4 bridge status inspected, supplied obfs4 bridge lines are configured when provided'",
+      "description": "Run the typed workflow command 'echo 'obfs4 bridge status inspected, supplied obfs4 bridge lines are configured when provided''.",
+      "condition": {
+        "type": "always"
+      },
+      "timeout": 120,
+      "confirm": false,
+      "nice_level": 0,
+      "cell_store": "anonymity",
+      "score_impact": 0,
+      "colonyops_safety": {
+        "danger_level": "safe",
+        "requires_auth": false,
+        "needs_sudo": false,
+        "execution_kind": "typed-arbitrary-workflow",
+        "destructive": false,
+        "workflow_safe": true,
+        "shell_safe": true,
+        "confirm_copy": "",
+        "rollback_hint": "Review the step result and restore the prior state before continuing if the command changed system state."
+      },
+      "command_id": "workflow.argv.echo.9c2e0b75dab95ee2",
+      "argv": [
+        "echo",
+        "obfs4 bridge status inspected, supplied obfs4 bridge lines are configured when provided"
+      ]
+    }
+  ]
+}
