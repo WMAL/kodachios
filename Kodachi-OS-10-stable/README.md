@@ -19,7 +19,7 @@ anything new, it just means you can read it before you install rather than after
 
 ## What is in `open/`
 
-222 files, 8.0 MB. Each directory answers a question people reasonably ask about a
+225 files, 8.1 MB. Each directory answers a question people reasonably ask about a
 privacy distribution whose core services are closed-source binaries.
 
 | Folder | Files | What it is | The question it answers |
@@ -28,7 +28,7 @@ privacy distribution whose core services are closed-source binaries.
 | [`open/workflow-profiles/`](open/workflow-profiles) | 122 | Every Kodachi workflow as a JSON step list: the exact commands, their order, conditions and timeouts | "What does Kodachi do to my network when I click Enable DNSCrypt?" |
 | [`open/dock/`](open/dock) | 23 | The Cairo Dock command surface: `gtk-direct-operations.json` (425 cells with their argv templates, sudo requirement and danger level), `dock-actions.tsv`, and the GTK window code in `lib/`, `libexec/` and `bin/` | "What runs when I click a dock icon, and does it need root?" |
 | [`open/thunar/`](open/thunar) | 19 | The file-manager right-click actions: GPG encrypt, sign, verify, secure wipe, sandbox, open-as-root, checksum, VirusTotal | "What tool does Securely Wipe actually call, and with how many passes?" |
-| [`open/conky/`](open/conky) | 51 | The always-on desktop status panel: its configs, Lua gauges and every collector script | "Is this thing phoning home?" |
+| [`open/conky/`](open/conky) | 54 | The always-on desktop status panel: its configs, Lua gauges and every collector script | "Is this thing phoning home?" |
 | [`open/system/`](open/system) | 2 | The AppArmor profile confining the browser, and the annotated ISO package list | "What confines LibreWolf, and what is installed by default?" |
 
 ---
