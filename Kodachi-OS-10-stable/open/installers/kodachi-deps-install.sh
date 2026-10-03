@@ -4455,7 +4455,7 @@ kodachi_preflight_auth_trust_ownership() {
     # This pass is intentionally read-only. Validate every existing component
     # of every path the producer can create or mutate before the first write.
     kodachi_require_safe_planned_directory_chain "$hooks_root" || return 1
-    for protected_dir in auth-trust rust others binaries-update-scripts; do
+    for protected_dir in auth-trust rust others binaries-update-scripts service-units; do
         planned_path="$hooks_root/$protected_dir"
         kodachi_require_safe_planned_directory_chain "$planned_path" || return 1
     done
@@ -4497,7 +4497,7 @@ kodachi_apply_auth_trust_ownership() {
         find -P "$hooks_root" -maxdepth 1 -type f -exec chmod go-w -- {} +
     fi
 
-    for protected_dir in auth-trust rust others binaries-update-scripts; do
+    for protected_dir in auth-trust rust others binaries-update-scripts service-units; do
         protected_path="$hooks_root/$protected_dir"
         [[ -e "$protected_path" ]] || continue
         kodachi_require_real_directory_chain "$protected_path" || return 1
@@ -9283,7 +9283,13 @@ install_welcome_commands() {
                 print_info "Kodachi welcome script already current (version $NEW_VERSION.$NEW_BUILD_NUM), verifying commands..."
             fi
         else
-            print_info "Updating Kodachi welcome script (${INSTALLED_VERSION:-unknown}.${INSTALLED_BUILD_NUM:-?} → $NEW_VERSION.$NEW_BUILD_NUM)..."
+            # Not "old -> new": the installed stamp comes from whichever build wrote it (an
+            # ISO counts desktop or terminal builds, a pack counts packs), so on a desktop
+            # image the arrow read "<lab-host> -> <lab-host>", a downgrade that never happened
+            # (formal apt gate, 2026-10-02). Name both stamps without claiming an order or a
+            # track: on a pack-to-pack upgrade both ARE pack counters. The banner and the
+            # update check read the image's own /etc/kodachi-version, never these literals.
+            print_info "Updating Kodachi welcome script: the packaged copy differs (packaged stamp $NEW_VERSION.$NEW_BUILD_NUM; installed stamp ${INSTALLED_VERSION:-unknown}.${INSTALLED_BUILD_NUM:-?})..."
         fi
     else
         print_info "Installing Kodachi welcome commands (version $NEW_VERSION.$NEW_BUILD_NUM)..."
@@ -9704,6 +9710,250 @@ if [[ "$EUID" -eq 0 ]]; then
 fi
 
 install_kodachi_conky_for_user
+
+# ============================================================================
+# PRIVILEGED SYSTEM UNITS, bash parity with the deb and the ISO (F5/C2/C7, 2026-09-30)
+# ============================================================================
+# Three root-owned system units the deb and the ISO already ship and enable:
+#   kodachi-online-auth-restore.service  (review C7) one root check-login per boot so the
+#       online-auth keep-alive loops come back after a reboot. deb: kodachi-hooks-core
+#       postinst `systemctl enable`; ISO: common overlay + multi-user.target.wants link.
+#   kodachi-conky-privileged.service/.timer  (C2) the conky HUD's root reads once per
+#       90 s cycle, so the user's conky refresh needs no sudo. deb: kodachi-conky
+#       postinst `enable --now`; ISO: gui-xfce overlay + 90-kodachi-services.preset.
+# A bash install had neither, so it kept the sudo fan-out C2 removed and lost the
+# keep-alive restore. The unit bodies below are BYTE-IDENTICAL copies of the canonical
+# files (online-auth-restore: the common ISO overlay; the conky pair:
+# livebuild-assets/conky/systemd/system/), enforced by
+# installers/tests/bash-system-units-parity-regression.sh. Installed to the same
+# directory the deb uses, so a later deb install replaces them instead of being
+# shadowed by an /etc copy. A file whose bytes already match is not rewritten.
+_kodachi_install_unit_file() {
+    local unit_dir="$1" name="$2" body="$3"
+    local dest="$unit_dir/$name" tmp
+    if [[ -f "$dest" ]] && [[ "$(cat "$dest" 2>/dev/null)"$'\n' == "$body" ]]; then
+        return 1
+    fi
+    tmp="$unit_dir/.$name.new.$$"
+    printf '%s' "$body" > "$tmp" || { rm -f -- "$tmp"; return 2; }
+    chown root:root "$tmp" 2>/dev/null || true
+    chmod 0644 "$tmp"
+    mv -Tf "$tmp" "$dest" || { rm -f -- "$tmp"; return 2; }
+    return 0
+}
+
+install_kodachi_privileged_system_units() {
+    print_step "Installing Kodachi privileged system units (deb/ISO parity)..."
+    if [[ "$EUID" -ne 0 ]]; then
+        print_warning "Not root: skipping the privileged system units (run this installer with sudo)"
+        return 0
+    fi
+    if ! command -v systemctl >/dev/null 2>&1; then
+        print_info "systemctl not available: skipping the privileged system units"
+        return 0
+    fi
+    local unit_dir="/usr/lib/systemd/system"
+    [[ -d "$unit_dir" ]] || unit_dir="/lib/systemd/system"
+    if [[ ! -d "$unit_dir" ]] || [[ -L "$unit_dir" ]]; then
+        print_warning "No system unit directory found: skipping the privileged system units"
+        return 0
+    fi
+    local changed=0 rc=0
+
+    local restore_unit
+    restore_unit=$(cat <<'KODACHI_UNIT_EOF'
+[Unit]
+Description=Kodachi: restore the online-auth keep-alive loops after a reboot
+Documentation=http://kodachi.cloud/wiki/
+# WHY (review C7, 2026-09-30). `online-auth authenticate --keep-alive` starts two
+# root loops (heartbeat_sender.sh, session_checker.sh). A reboot kills them and
+# keeps both the session and their pid files. online-auth restarts them from a
+# ROOT `check-login` or `check-all-status` whose session is valid, but the only
+# root pollers are the dashboard and autoshield; conky polls as the desktop user.
+# With the dashboard not started (and on the terminal ISO, which has none) the
+# loops stayed dead. This unit is that root poll, once per boot, with no GUI.
+#
+# It restarts nothing by itself: check-login restarts the loops only when a
+# keep-alive intent (a regular pid file), a stored session and dead workers all
+# hold, decided again under heartbeat_start.lock. The conditions below only skip
+# the run when there is plainly nothing to do.
+#
+# Needs nothing the GUI provides: the stored session token, the network or a
+# valid offline session cache (check-login falls back to it when kodachi.cloud is
+# unreachable), and a sane clock for TLS (kodachi-clock-step). Runs as root with
+# no SUDO_USER or SUDO_UID, UNLIKE the dashboard's `sudo -n online-auth` calls
+# (sudo sets both), so cli-core's fix_ownership_if_sudo does nothing here. It
+# relies instead on every file check-login writes being published owned like its
+# parent directory (secure_file writes, logs-hook F4 hand-over), so the desktop
+# user can still read and write them afterwards. VM proof: after an unattended
+# boot, `stat -c '%U %n'` over hooks/tmp/*, config/session-token.json and logs/*
+# shows no new root-owned file the desktop user must write, and a user-run
+# `online-auth check-all-status` still reads logged in.
+#
+# DefaultDependencies=no ON PURPOSE: a target waits for the units it wants unless
+# they set DefaultDependencies=no, and check-login can take minutes when the
+# network is slow at boot. With the defaults, multi-user.target, and so the login
+# screen, would wait for it. The default ordering is restored explicitly below.
+DefaultDependencies=no
+Requires=sysinit.target
+Wants=network-online.target
+After=sysinit.target basic.target network-online.target kodachi-clock-step.service
+Conflicts=shutdown.target
+Before=shutdown.target
+ConditionPathExists=/opt/kodachi/dashboard/hooks/online-auth
+ConditionPathExists=/opt/kodachi/dashboard/hooks/config/session-token.json
+ConditionPathExists=|/opt/kodachi/dashboard/hooks/tmp/heartbeat_service.pid
+ConditionPathExists=|/opt/kodachi/dashboard/hooks/tmp/session_checker.pid
+
+[Service]
+Type=oneshot
+# The loops check-login starts are children of this unit. RemainAfterExit keeps
+# the unit active once check-login returns, and KillMode=process means a stop or
+# restart of this unit signals only its own main process, never the loops.
+RemainAfterExit=yes
+KillMode=process
+# Two attempts, a minute apart. One check-login already retries a network failure
+# four times and then falls back to the offline session cache, so the second
+# attempt is only for a network that came up late with no usable cache. A
+# definite "Session is invalid" answer ends it. The leading '-' and the final
+# `exit 0` keep a failed attempt from marking the unit failed.
+ExecStart=-/bin/sh -c 'i=1; while [ "$$i" -le 2 ]; do out=$$(/opt/kodachi/dashboard/hooks/online-auth check-login --json 2>&1); rc=$$?; echo "kodachi-online-auth-restore: check-login attempt $$i exit $$rc"; [ "$$rc" -eq 0 ] && exit 0; case "$$out" in *"Session is invalid"*) exit 0;; esac; i=$$((i+1)); [ "$$i" -le 2 ] && sleep 60; done; exit 0'
+TimeoutStartSec=600
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+KODACHI_UNIT_EOF
+)
+    # `|| rc=$?` is load-bearing: the installer runs under `set -eo pipefail`, and a bare
+    # call exits the whole installer on the 1 an UNCHANGED unit returns (every re-run).
+    rc=0; _kodachi_install_unit_file "$unit_dir" kodachi-online-auth-restore.service "$restore_unit"$'\n' || rc=$?
+    [[ $rc -eq 0 ]] && changed=1
+    [[ $rc -eq 2 ]] && print_warning "Could not write kodachi-online-auth-restore.service"
+
+    # The conky pair ships with the HUD (deb kodachi-conky, gui-xfce ISO), so it follows
+    # the same GUI gate as install_kodachi_conky_for_user.
+    local want_conky=1 _variant=""
+    [[ "${SKIP_GUI_INSTALL:-}" == "true" ]] && want_conky=0
+    if [[ -f /opt/kodachi-offline-packages/build-variant ]]; then
+        _variant=$(tr -cd 'a-z-' < /opt/kodachi-offline-packages/build-variant)
+        [[ "$_variant" == "terminal" || "$_variant" == "minimal" ]] && want_conky=0
+    fi
+    if [[ $want_conky -eq 1 ]] && ! detect_gui_environment; then
+        want_conky=0
+    fi
+    if [[ $want_conky -eq 1 ]]; then
+        local conky_service conky_timer
+        conky_service=$(cat <<'KODACHI_UNIT_EOF'
+# kodachi-conky-privileged.service
+# SPDX-License-Identifier: LicenseRef-Kodachi-SAN-1.1
+# Copyright (c) 2013-2026 Warith Al Maawali
+#
+# C2 / F5 (2026-09-30): ONE privileged read per conky cycle, done by root.
+#
+# The user's conky refresh used to run each root read through its own `sudo -n`,
+# about 17 sudo sessions per cycle, and the Kodachi audit rules log every root exec
+# that carries a login auid (-S execve -F euid=0 -F auid>=1000 -k privileged_exec),
+# so each one also logged every helper the root hook spawned. A system service has no
+# login auid, so nothing it runs matches that rule. This oneshot runs the fixed list of
+# root reads once (conky-status privileged-collect, see conky-status/src/privileged.rs)
+# and publishes them to /run/kodachi-conky/privileged.json, root-owned 0640 group sudo.
+# The user side reads that file and falls back to its old sudo path when it is absent
+# or older than 150 s, so stopping this unit restores the previous behaviour.
+#
+# It writes nothing and exits at once while no desktop session runs the conky HUD and
+# no Kodachi dashboard runs.
+#
+# Round 3b (2026-10-01): the timer fires every 10 s and each run collects only what is
+# due (see the timer). LogLevelMax=notice drops this unit's info-level lines, which
+# systemd.exec(5) applies to the unit's own processes AND to the messages PID 1 logs about
+# the unit, so the per-run "Starting", "Finished" and "Deactivated successfully" lines and
+# the collector's one-line summary no longer reach the journal six times a minute, while a
+# failed run (logged at warning or above) still does.
+
+[Unit]
+Description=Kodachi conky privileged status reads (one root collection per cycle)
+ConditionFileIsExecutable=/opt/kodachi/dashboard/hooks/conky-status
+
+[Service]
+Type=oneshot
+User=root
+Environment=HOME=/root
+ExecStart=/opt/kodachi/dashboard/hooks/conky-status privileged-collect
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=90
+# Reap every helper the reads left behind when the oneshot ends.
+KillMode=control-group
+LogLevelMax=notice
+KODACHI_UNIT_EOF
+)
+        conky_timer=$(cat <<'KODACHI_UNIT_EOF'
+# kodachi-conky-privileged.timer
+# SPDX-License-Identifier: LicenseRef-Kodachi-SAN-1.1
+# Copyright (c) 2013-2026 Warith Al Maawali
+#
+# Round 3b (2026-10-01): fires every 10 s, and each run of
+# kodachi-conky-privileged.service collects only the reads that are DUE
+# (conky-status privileged.rs read_is_due): the conky HUD's reads every 90 s, the
+# cadence of the user-side conky-snapshot-refresh.timer, so the bundle the user refresh
+# reads is at most ~115 s old (the reader accepts 150 s); the dashboard's status reads at
+# their own 10 to 60 s TTL while a dashboard window is visible; and every read taken
+# before the last Kodachi state change at once. A run with nothing due exits without
+# writing. AccuracySec=1s because the default (1 min) would coalesce the 10 s cadence.
+# See the service file for why.
+
+[Unit]
+Description=Run the Kodachi conky privileged status reads that are due, every 10 seconds
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=10s
+AccuracySec=1s
+Unit=kodachi-conky-privileged.service
+
+[Install]
+WantedBy=timers.target
+KODACHI_UNIT_EOF
+)
+        rc=0; _kodachi_install_unit_file "$unit_dir" kodachi-conky-privileged.service "$conky_service"$'\n' || rc=$?
+        [[ $rc -eq 0 ]] && changed=1
+        [[ $rc -eq 2 ]] && print_warning "Could not write kodachi-conky-privileged.service"
+        rc=0; _kodachi_install_unit_file "$unit_dir" kodachi-conky-privileged.timer "$conky_timer"$'\n' || rc=$?
+        [[ $rc -eq 0 ]] && changed=1
+        [[ $rc -eq 2 ]] && print_warning "Could not write kodachi-conky-privileged.timer"
+    else
+        print_info "No GUI/conky on this install: the conky privileged timer is not installed"
+    fi
+
+    if [[ $changed -eq 1 ]] && [[ -d /run/systemd/system ]]; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
+    # Same enable semantics as the deb: the restore unit by name for the next boot (the
+    # loops a live system needs are started by the login itself); the conky timer now.
+    if [[ -f "$unit_dir/kodachi-online-auth-restore.service" ]]; then
+        if systemctl enable kodachi-online-auth-restore.service >/dev/null 2>&1; then
+            print_success "Enabled kodachi-online-auth-restore.service"
+        else
+            print_warning "Could not enable kodachi-online-auth-restore.service"
+        fi
+    fi
+    if [[ $want_conky -eq 1 ]] && [[ -f "$unit_dir/kodachi-conky-privileged.timer" ]]; then
+        if [[ -d /run/systemd/system ]]; then
+            systemctl enable --now kodachi-conky-privileged.timer >/dev/null 2>&1 \
+                && print_success "Enabled and started kodachi-conky-privileged.timer" \
+                || print_warning "Could not enable kodachi-conky-privileged.timer"
+        else
+            systemctl enable kodachi-conky-privileged.timer >/dev/null 2>&1 \
+                && print_success "Enabled kodachi-conky-privileged.timer" \
+                || print_warning "Could not enable kodachi-conky-privileged.timer"
+        fi
+    fi
+}
+
+install_kodachi_privileged_system_units
 
 # ============================================================================
 # FIX /usr/sbin PATH FOR NON-ROOT USERS

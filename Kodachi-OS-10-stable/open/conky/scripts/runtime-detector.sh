@@ -22,6 +22,12 @@
 # Uses the conky-status gateway where applicable.
 
 set -u
+# F19: answer from the snapshot-generation memo when nothing this script reads has
+# changed (conky-snapshot-memo.sh explains why the output is identical). Any doubt
+# falls through to the unchanged body below.
+if [[ -z "${CONKY_MEMO_INNER:-}" && -r "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" ]]; then
+    . "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" && conky_memo_run "${BASH_SOURCE[0]}" "$@"
+fi
 FIELD="${1:-conky-vpn}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -97,10 +103,18 @@ normalize_vpn_protocol_value() {
 # The gateway's routing adapter already calls routing-switch with proper
 # permissions; there is no need to invoke sudo from the Conky session.
 
+# Round 3d cross-review (A1): a missing key, an unanswered read ("?") or an empty value is
+# UNKNOWN, never "Off". Right after a state stamp the gateway refuses the pre-stamp snapshot
+# and the binary can time out, and the old "Off" default then printed a known
+# "Routing: Off / Protocol: None" about a machine nobody had measured.
 gateway_routing_onoff() {
     local raw
-    raw="$(conky_gateway_get_or_default "data.routing.onoff" "Off" 2 "$BIN")"
-    normalize_onoff_value "$raw"
+    raw="$(conky_gateway_get_or_default "data.routing.onoff" "Unknown" 2 "$BIN")"
+    raw="$(normalize_onoff_value "$raw")"
+    case "$raw" in
+        On|Off) printf '%s\n' "$raw" ;;
+        *) printf '%s\n' "Unknown" ;;
+    esac
 }
 
 gateway_routing_protocol() {
@@ -114,20 +128,25 @@ gateway_routing_connected_text() {
     onoff="$(gateway_routing_onoff)"
     if [[ "$onoff" == "On" ]]; then
         echo "Connected"
-    else
+    elif [[ "$onoff" == "Off" ]]; then
         echo "Disconnected"
+    else
+        echo "Unknown"
     fi
 }
 
 build_conky_routing_line() {
-    local routing_onoff="${1:-Off}"
+    local routing_onoff="${1:-Unknown}"
     local routing_protocol="${2:-None}"
 
     routing_onoff="$(normalize_onoff_value "$routing_onoff")"
     routing_protocol="$(normalize_vpn_protocol_value "$routing_protocol")"
 
-    if [[ "$routing_onoff" != "On" ]]; then
+    if [[ "$routing_onoff" == "Off" ]]; then
         routing_protocol="None"
+    elif [[ "$routing_onoff" != "On" ]]; then
+        routing_onoff="Unknown"
+        routing_protocol="Unknown"
     fi
 
     printf '%s\n' "\${voffset 4}\${goto 5}\${font Liberation Sans Narrow:size=10}\${color3}Routing:\${color1}${routing_onoff}\${alignr}\${color3}Protocol: \${color1}${routing_protocol}"

@@ -1,0 +1,42 @@
+# kodachi-conky-privileged.service
+# SPDX-License-Identifier: LicenseRef-Kodachi-SAN-1.1
+# Copyright (c) 2013-2026 Warith Al Maawali
+#
+# C2 / F5 (2026-09-30): ONE privileged read per conky cycle, done by root.
+#
+# The user's conky refresh used to run each root read through its own `sudo -n`,
+# about 17 sudo sessions per cycle, and the Kodachi audit rules log every root exec
+# that carries a login auid (-S execve -F euid=0 -F auid>=1000 -k privileged_exec),
+# so each one also logged every helper the root hook spawned. A system service has no
+# login auid, so nothing it runs matches that rule. This oneshot runs the fixed list of
+# root reads once (conky-status privileged-collect, see conky-status/src/privileged.rs)
+# and publishes them to /run/kodachi-conky/privileged.json, root-owned 0640 group sudo.
+# The user side reads that file and falls back to its old sudo path when it is absent
+# or older than 150 s, so stopping this unit restores the previous behaviour.
+#
+# It writes nothing and exits at once while no desktop session runs the conky HUD and
+# no Kodachi dashboard runs.
+#
+# Round 3b (2026-10-01): the timer fires every 10 s and each run collects only what is
+# due (see the timer). LogLevelMax=notice drops this unit's info-level lines, which
+# systemd.exec(5) applies to the unit's own processes AND to the messages PID 1 logs about
+# the unit, so the per-run "Starting", "Finished" and "Deactivated successfully" lines and
+# the collector's one-line summary no longer reach the journal six times a minute, while a
+# failed run (logged at warning or above) still does.
+
+[Unit]
+Description=Kodachi conky privileged status reads (one root collection per cycle)
+ConditionFileIsExecutable=/opt/kodachi/dashboard/hooks/conky-status
+
+[Service]
+Type=oneshot
+User=root
+Environment=HOME=/root
+ExecStart=/opt/kodachi/dashboard/hooks/conky-status privileged-collect
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=90
+# Reap every helper the reads left behind when the oneshot ends.
+KillMode=control-group
+LogLevelMax=notice

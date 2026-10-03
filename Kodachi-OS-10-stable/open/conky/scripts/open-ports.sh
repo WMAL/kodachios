@@ -130,7 +130,11 @@ while IFS= read -r line; do
     [[ $count -ge $MAX_ROWS ]] && continue
 
     # Extract peer address:port (4th column)
-    peer=$(awk '{print $4}' <<< "$line")
+    # F19 (2026-09-30): builtin split. `awk '{print $4}'` was a subshell plus awk per
+    # connection line; read with the default IFS splits on runs of blanks and drops
+    # leading ones exactly as awk's default FS does, so the fourth field is the same.
+    peer=""
+    read -r _ _ _ peer _ <<< "$line"
     [[ -z "$peer" ]] && continue
 
     # Split host and port

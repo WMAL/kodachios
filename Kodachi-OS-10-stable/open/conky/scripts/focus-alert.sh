@@ -137,29 +137,85 @@ if (( NEWS_DISPLAY_ITEMS > 10 )); then NEWS_DISPLAY_ITEMS=10; fi
 if (( NEWS_DISPLAY_ITEMS > NEWS_FETCH_ITEMS )); then NEWS_DISPLAY_ITEMS="$NEWS_FETCH_ITEMS"; fi
 if (( NEWS_ROTATE_INTERVAL < 30 )); then NEWS_ROTATE_INTERVAL=30; fi
 
-sanitize_value() {
-    local value="${1:-}"
-    value="${value//$'\r'/ }"
-    value="${value//$'\n'/ }"
-    value="$(echo "$value" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
-    if [[ -z "$value" ]]; then
-        echo "N/A"
+# F19 (2026-09-30): PURE-BASH CORE OF sanitize_value, WRITTEN INTO A NAMED VARIABLE.
+#
+# Measured on the live <lab-host> VM <lab-host> with a bpftrace fork tree: this
+# script rooted 3,049 of the 7,946 forks the whole conky tree made in 120 s (38%),
+# and almost all of them were `$(echo "$v" | sed ...)` and `| tr | sed` inside
+# sanitize_value / normalize_compare_value, called ~100 times per poll by
+# is_unknown_value and is_real_change. This computes the SAME string with no
+# process at all:
+#   sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//'  collapses every whitespace run to one
+#   space and drops the (single, collapsed) leading and trailing space;
+#   `echo "$v"` prints NO text when "$v" is a lone option word (-n, -e, -E, -neE),
+#   so that input sanitizes to "N/A" exactly as before.
+_fa_sanitize_into() {
+    local -n _fa_si_out="$1"
+    local _fa_si_v="${2:-}" _fa_si_r="" _fa_si_ch _fa_si_gap=0 _fa_si_i
+    _fa_si_v="${_fa_si_v//$'\r'/ }"
+    _fa_si_v="${_fa_si_v//$'\n'/ }"
+    [[ "$_fa_si_v" =~ ^-[neE]+$ ]] && _fa_si_v=""
+    if [[ "$_fa_si_v" != *[[:space:]][[:space:]]* && "$_fa_si_v" != [[:space:]]* \
+          && "$_fa_si_v" != *[[:space:]] && "$_fa_si_v" != *[$'\t\v\f']* ]]; then
+        # Already single-spaced with no edge whitespace: sed would not change it.
+        _fa_si_r="$_fa_si_v"
     else
-        echo "$value"
+        for ((_fa_si_i = 0; _fa_si_i < ${#_fa_si_v}; _fa_si_i++)); do
+            _fa_si_ch="${_fa_si_v:_fa_si_i:1}"
+            if [[ "$_fa_si_ch" == [[:space:]] ]]; then
+                _fa_si_gap=1
+            else
+                if (( _fa_si_gap )) && [[ -n "$_fa_si_r" ]]; then
+                    _fa_si_r+=" "
+                fi
+                _fa_si_gap=0
+                _fa_si_r+="$_fa_si_ch"
+            fi
+        done
     fi
+    if [[ -z "$_fa_si_r" ]]; then
+        _fa_si_out="N/A"
+    elif [[ "$_fa_si_r" =~ ^-[neE]+$ ]]; then
+        # The old body ended in `echo "$value"`, which prints NOTHING for a lone echo
+        # option word, so its caller received an empty string, not "N/A".
+        _fa_si_out=""
+    else
+        _fa_si_out="$_fa_si_r"
+    fi
+}
+
+# Lowercased compare form. `tr '[:upper:]' '[:lower:]'` works byte by byte and only
+# lowers ASCII, so ${v,,} runs under LC_ALL=C here to do exactly that. The sanitized
+# value is already single-spaced and trimmed, so the old second sed was a no-op.
+_fa_normalize_into() {
+    local -n _fa_ni_out="$1"
+    local _fa_ni_v
+    _fa_sanitize_into _fa_ni_v "${2:-}"
+    local LC_ALL=C
+    _fa_ni_out="${_fa_ni_v,,}"
+}
+
+sanitize_value() {
+    local value
+    _fa_sanitize_into value "${1:-}"
+    printf '%s\n' "$value"
 }
 
 normalize_compare_value() {
     local value
-    value="$(sanitize_value "${1:-}")"
-    echo "$value" | tr '[:upper:]' '[:lower:]' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//'
+    _fa_normalize_into value "${1:-}"
+    printf '%s\n' "$value"
 }
 
 is_unknown_value() {
     local norm
-    norm="$(normalize_compare_value "${1:-}")"
+    _fa_normalize_into norm "${1:-}"
+    # Inspector pass 7 (#2): "?" is what conky-status now publishes for a read that did
+    # not answer (auth.login, online_info.knet, routing.onoff). Without it here an
+    # unanswered KNet check counted as a reading, so On -> ? -> On fired "Security
+    # posture changed" twice and recorded "?" as a value.
     case "$norm" in
-        ""|n/a|na|n.a|n.a.|unknown|null|nil|-|--)
+        ""|n/a|na|n.a|n.a.|unknown|null|nil|-|--|\?)
             return 0
             ;;
         *)
@@ -170,10 +226,10 @@ is_unknown_value() {
 
 is_real_change() {
     local prev curr prev_norm curr_norm
-    prev="$(sanitize_value "${1:-}")"
-    curr="$(sanitize_value "${2:-}")"
-    prev_norm="$(normalize_compare_value "$prev")"
-    curr_norm="$(normalize_compare_value "$curr")"
+    _fa_sanitize_into prev "${1:-}"
+    _fa_sanitize_into curr "${2:-}"
+    _fa_normalize_into prev_norm "$prev"
+    _fa_normalize_into curr_norm "$curr"
 
     # Same normalized value is never a change.
     [[ "$prev_norm" == "$curr_norm" ]] && return 1
@@ -449,6 +505,9 @@ prune_change_history() {
 
     [[ "$now" =~ ^[0-9]+$ ]] || now="$(date +%s)"
     [[ -f "$CHANGE_HISTORY_FILE" ]] || return 0
+    # F19: an EMPTY history prunes to an empty history, so the mktemp + awk + mv
+    # this function ran on every 10 s render changed nothing but the inode.
+    [[ -s "$CHANGE_HISTORY_FILE" ]] || return 0
 
     tmp_file="$(mktemp "$DATA_DIR/.focus-alert-history.XXXXXX")"
     awk -F'|' -v now="$now" -v window="$CHANGE_HISTORY_WINDOW" -v limit="$CHANGE_HISTORY_LIMIT" '
@@ -530,6 +589,7 @@ build_recent_change_lines() {
 
 read_snapshot_values() {
     local snapshot_file="$1"
+    local _fa_rsv_clean
     if ! command -v jq >/dev/null 2>&1; then
         return 1
     fi
@@ -537,7 +597,8 @@ read_snapshot_values() {
 
     while IFS='=' read -r key value; do
         [[ -z "$key" ]] && continue
-        values["$key"]="$(sanitize_value "$value")"
+        _fa_sanitize_into _fa_rsv_clean "$value"
+        values["$key"]="$_fa_rsv_clean"
     done < <(
         jq -r '
             def safe(v; d):
@@ -550,16 +611,22 @@ read_snapshot_values() {
                 | (safe(nb; "")) as $n
                 | if $b != "" and $b != "N/A" and $n != "" and $n != "N/A" then ($b + "." + $n) else "" end;
             [
-                "ip=" + safe((.data.ip.effective.ip // .data.ip.public); "N/A"),
+                # Inspector pass 8 (#8): the ip adapter publishes "Offline" when the
+                # fetch failed. That is an unread address, not a new one, so it reads as
+                # Unknown; recorded as a value, 1.2.3.4 -> Offline -> 1.2.3.4 fired two
+                # IP-change alerts.
+                "ip=" + (safe((.data.ip.effective.ip // .data.ip.public); "N/A") | if . == "Offline" then "Unknown" else . end),
                 "country=" + safe((.data.ip.effective.country // .data.ip.country); "N/A"),
                 "hostname=" + safe(.data.system.os.hostname; "N/A"),
                 "local_ip=" + safe(.data.system.network.local_ip; "N/A"),
                 "gateway=" + safe(.data.system.network.gateway; "N/A"),
                 "interface=" + safe(.data.system.network.interface; "N/A"),
                 "mac=" + safe(.data.system.network.mac; "N/A"),
-                "vpn=" + safe(.data.routing.onoff; "Off"),
-                "protocol=" + safe(.data.routing.protocol; "None"),
-                "dnscrypt=" + safe(.data.dns.dnscrypt_onoff; "Off"),
+                # Inspector pass 7 (#6): a missing key is a reading that did not happen,
+                # so it defaults to Unknown (ignored as a change), never Off/None.
+                "vpn=" + safe(.data.routing.onoff; "Unknown"),
+                "protocol=" + safe(.data.routing.protocol; "Unknown"),
+                "dnscrypt=" + safe(.data.dns.dnscrypt_onoff; "Unknown"),
                 "firewall=" + (
                     if .data.system.runtime.firewall.onoff != null
                     then safe(.data.system.runtime.firewall.onoff; "Off")
@@ -567,14 +634,14 @@ read_snapshot_values() {
                     # `firewall: false` on a failed read and carries the provenance in
                     # the companion instead; without this the overlay asserted
                     # "firewall Off" off a reading that never happened.
-                    elif (.data.health.firewall_known == false)
+                    elif (.data.health.firewall_known != true)
                     then "Unknown"
                     else (if .data.health.firewall == true then "On" else "Off" end)
                     end
                 ),
-                "auth_status=" + safe(.data.auth.login; "Off"),
+                "auth_status=" + safe(.data.auth.login; "?"),
                 "auth_session=" + safe(.data.auth.session_id; "N/A"),
-                "lknet=" + safe(.data.online_info.knet; "Off"),
+                "lknet=" + safe(.data.online_info.knet; "?"),
                 "timezone=" + safe(.data.system.os.timezone; "N/A"),
                 "binary_cur=" + (
                     [
@@ -617,17 +684,41 @@ read_snapshot_values() {
     )
 }
 
+# F19: `ps -o ppid=` / `ps -o comm=` piped through `tr` cost four processes per
+# ancestor, and this walk runs twice per render. /proc/<pid>/stat field 4 IS the ppid
+# `ps -o ppid=` prints, and /proc/<pid>/comm IS what `ps -o comm=` prints, so these
+# builtin reads return the same answer with no fork. A pid that has exited yields an
+# empty answer here exactly as `ps` printed nothing for it.
+_fa_proc_ppid_into() {
+    local -n _fa_pp_out="$1"
+    local _fa_pp_stat="" _fa_pp_rest
+    local -a _fa_pp_f=()
+    _fa_pp_out=""
+    IFS= read -r _fa_pp_stat < "/proc/$2/stat" 2>/dev/null || return 0
+    _fa_pp_rest="${_fa_pp_stat##*) }"
+    read -r -a _fa_pp_f <<< "$_fa_pp_rest"
+    _fa_pp_out="${_fa_pp_f[1]:-}"
+}
+
+_fa_proc_comm_into() {
+    local -n _fa_pc_out="$1"
+    local _fa_pc_comm=""
+    IFS= read -r _fa_pc_comm < "/proc/$2/comm" 2>/dev/null || true
+    _fa_pc_out="${_fa_pc_comm// /}"
+}
+
 detect_conky_session_id() {
     local pid ppid cmd depth
     pid="$$"
 
     # Walk a few ancestors and return a stable Conky PID when found.
     for depth in 1 2 3 4 5 6; do
-        ppid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+        ppid=""
+        [[ "$pid" =~ ^[0-9]+$ ]] && _fa_proc_ppid_into ppid "$pid"
         if [[ -z "$ppid" || "$ppid" == "0" ]]; then
             break
         fi
-        cmd="$(ps -o comm= -p "$ppid" 2>/dev/null | tr -d ' ' || true)"
+        _fa_proc_comm_into cmd "$ppid"
         if [[ "$cmd" == "conky" ]]; then
             echo "$ppid"
             return 0
@@ -639,9 +730,10 @@ detect_conky_session_id() {
 }
 
 conky_pid_alive() {
-    local pid="${1:-}"
+    local pid="${1:-}" comm=""
     [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-    [[ "$(ps -o comm= -p "$pid" 2>/dev/null | tr -d ' ' || true)" == "conky" ]]
+    IFS= read -r comm < "/proc/$pid/comm" 2>/dev/null || return 1
+    [[ "${comm// /}" == "conky" ]]
 }
 
 focus_owner_check() {
@@ -766,7 +858,9 @@ overlay_routing_from_switch() {
     bin="$(conky_gateway_find_binary 2>/dev/null || true)"
     [[ -n "$bin" ]] || return 0
 
-    onoff="$(conky_gateway_get_or_default "data.routing.onoff" "Off" 2 "$bin")"
+    # Inspector pass 7 (#6): a missing key defaults to Unknown, which the branch below
+    # already renders as Unknown, never as "VPN Off / protocol None".
+    onoff="$(conky_gateway_get_or_default "data.routing.onoff" "Unknown" 2 "$bin")"
     onoff="$(echo "$onoff" | tr '[:upper:]' '[:lower:]' | xargs)"
 
     # THIS OVERLAY OVERWRITES the value read further up, so a hardcoded "Off" here
@@ -776,14 +870,20 @@ overlay_routing_from_switch() {
     # about a machine it had not measured. Same defect class as the dashboard Tor row
     # reported flapping on 2026-09-28. `connected_known` is the provenance
     # companion published by conky-status adapters/routing.rs.
+    # Round 3d cross-review (A2): a MISSING `connected_known` is unknown provenance, so it
+    # defaults to "false"; the producer always publishes it, so only an older binary (or a
+    # partial snapshot) reaches this default, and an "Off" it carries is not a measured Off.
     local connected_known
-    connected_known="$(conky_gateway_get_or_default "data.routing.connected_known" "true" 2 "$bin")"
+    connected_known="$(conky_gateway_get_or_default "data.routing.connected_known" "false" 2 "$bin")"
+    # Only a literal true is known (conky_known_is_true in conky-gateway-common.sh).
+    local connected_measured=0
+    conky_known_is_true "$connected_known" && connected_measured=1
     if [[ "$onoff" == "on" ]]; then
         protocol="$(conky_gateway_get_or_default "data.routing.protocol" "None" 2 "$bin")"
         values[vpn]="On"
         values[protocol]="$(normalize_protocol_value "$protocol")"
     elif [[ "$onoff" == "?" || "$onoff" == "unknown" || "$onoff" == "null" || "$onoff" == "" \
-            || "${connected_known,,}" == "false" ]]; then
+            || "$connected_measured" -eq 0 ]]; then
         values[vpn]="Unknown"
         values[protocol]="Unknown"
     else
@@ -831,7 +931,16 @@ trigger_gateway_refresh_async() {
 
     age="$(snapshot_age_seconds "$snapshot_file")"
     [[ "$age" =~ ^[0-9]+$ ]] || age=$((GATEWAY_TTL + 1))
-    if (( age <= GATEWAY_TTL )); then
+    # Round 3b (inspector B, V8): a snapshot written at or before the last Kodachi state
+    # change is due NOW whatever its age (conky-gateway-common.sh _conky_snapshot_times),
+    # and the cooldown below does not hold it back unless the last refresh attempt was
+    # itself started after the change. Every panel reads it as a miss meanwhile.
+    local pre_change=0 stamp_ts=0
+    if _conky_snapshot_times "$snapshot_file" && (( _CONKY_SNAP_TS <= _CONKY_STAMP_TS )); then
+        pre_change=1
+        stamp_ts="$_CONKY_STAMP_TS"
+    fi
+    if (( age <= GATEWAY_TTL && pre_change == 0 )); then
         return 0
     fi
 
@@ -847,7 +956,9 @@ trigger_gateway_refresh_async() {
     last_ts=$(cat "$REFRESH_MARK_FILE" 2>/dev/null || echo 0)
     [[ "$last_ts" =~ ^[0-9]+$ ]] || last_ts=0
 
-    if (( now_ts - last_ts < cooldown )); then
+    # Only a real, past stamp lifts the cooldown: an untrusted stamp reads as "changed now
+    # and later" and would otherwise start a refresh on every poll.
+    if (( now_ts - last_ts < cooldown )) && ! (( pre_change == 1 && last_ts <= stamp_ts && stamp_ts <= now_ts )); then
         return 0
     fi
 
@@ -1212,7 +1323,7 @@ build_news_lines() {
     fi
 
     while IFS= read -r line; do
-        line="$(sanitize_value "$line")"
+        _fa_sanitize_into line "$line"
         [[ -n "$line" && "$line" != "N/A" ]] || continue
         cached_items+=("$line")
     done < "$NEWS_CACHE_FILE"
@@ -1248,7 +1359,8 @@ render() {
     local cache_tmp
     local current_session bin
     local -a changed_lines=() news_lines=() output_lines=()
-    now="$(date +%s)"
+    # F19: builtin clock, same epoch seconds as `date +%s` without a process.
+    printf -v now '%(%s)T' -1 2>/dev/null || now="$(date +%s)"
 
     state_load
     changed_fields="$(filter_changed_fields_csv "${changed_fields:-}")"

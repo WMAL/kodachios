@@ -15,6 +15,12 @@
 # Copyright (c) 2013-2026 Warith Al Maawali
 
 set -o pipefail
+# F19: answer from the snapshot-generation memo when nothing this script reads has
+# changed (conky-snapshot-memo.sh explains why the output is identical). Any doubt
+# falls through to the unchanged body below.
+if [[ -z "${CONKY_MEMO_INNER:-}" && -r "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" ]]; then
+    . "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" && conky_memo_run "${BASH_SOURCE[0]}" "$@"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -34,11 +40,30 @@ arr=$(conky_gateway_get_multiline_or_default data.online_info.vps.nodes "" 2 "$B
 [[ -z "$arr" ]] && exit 0
 
 n=0
+unread=0
 while IFS=$'\t' read -r disp status torvis country; do
-    [[ -z "$disp" || "$disp" == "Off" ]] && continue
+    status_known=0
+    [[ "$status" == "On" || "$status" == "Off" ]] && status_known=1
+    # A node is shown whenever something about it was read, a name or a status; it
+    # keeps its number, and an unknown status is drawn neutral with a "?" (inspector
+    # pass 9: a read node that only left out services.online vanished).
+    # Only a node with no name AND no status was not read at all (pass 8, #6).
+    if [[ -z "$disp" || "$disp" == "Off" || "$disp" == "?" ]]; then
+        if (( ! status_known )); then
+            unread=$((unread + 1))
+            continue
+        fi
+        # A read status with no name: the old producer's "Off" placeholder rows stay
+        # hidden as before; a name the producer could not read is shown as "?".
+        [[ "$disp" == "?" ]] || continue
+    fi
     n=$((n + 1))
-    if [[ "$status" == "On" ]]; then color='${color1}'; else color='${color6}'; fi
-    line='${voffset 6}${goto 5}${font Liberation Sans Narrow:size=10}${color3}VPS'"$n"': '"$color$disp"
+    case "$status" in
+        On) color='${color1}'; mark="" ;;
+        Off) color='${color6}'; mark="" ;;
+        *) color='${color3}'; mark=" ?" ;;
+    esac
+    line='${voffset 6}${goto 5}${font Liberation Sans Narrow:size=10}${color3}VPS'"$n"': '"$color$disp$mark"
     if [[ "$torvis" == "Yes" ]]; then
         line="$line"'${alignr}${color3}Tor'"$n"': ${color1}'"$country"
     fi
@@ -51,5 +76,9 @@ done < <(printf '%s' "$arr" | jq -r '.[]? | [.vpsdisplay, .status, .torvisible, 
 # VPS NODES header sat over nothing. Say so in one grey row, so the user can tell
 # "no node is reachable right now" from "the panel is broken".
 if (( n == 0 )); then
-    printf '%s\n' '${voffset 6}${goto 5}${font Liberation Sans Narrow:size=10}${color3}no node reachable'
+    if (( unread > 0 )); then
+        printf '%s\n' '${voffset 6}${goto 5}${font Liberation Sans Narrow:size=10}${color3}fleet not read'
+    else
+        printf '%s\n' '${voffset 6}${goto 5}${font Liberation Sans Narrow:size=10}${color3}no node reachable'
+    fi
 fi

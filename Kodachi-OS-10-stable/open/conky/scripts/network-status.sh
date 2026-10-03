@@ -22,6 +22,12 @@
 # Uses the conky-status gateway where applicable.
 
 set -u
+# F19: answer from the snapshot-generation memo when nothing this script reads has
+# changed (conky-snapshot-memo.sh explains why the output is identical). Any doubt
+# falls through to the unchanged body below.
+if [[ -z "${CONKY_MEMO_INNER:-}" && -r "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" ]]; then
+    . "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" && conky_memo_run "${BASH_SOURCE[0]}" "$@"
+fi
 FIELD="${1:-active}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null

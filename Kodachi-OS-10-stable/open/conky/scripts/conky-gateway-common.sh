@@ -163,6 +163,8 @@ declare -gA _CONKY_KEY_ALIASES=(
     ["crypto-price.azero"]="data.online_info.prices.azero"
     ["crypto-price.xau"]="data.online_info.prices.xau"
     ["crypto-price.xag"]="data.online_info.prices.xag"
+    # F17: "on", "off" (price ticker switched off, the default) or "unknown".
+    ["crypto-price.state"]="data.online_info.prices_state"
     ["version-check.binary"]="data.versions.binary.status"
     ["version-check.terminal"]="data.versions.terminal.status"
     ["version-check.desktop"]="data.versions.desktop.status"
@@ -208,6 +210,68 @@ declare -gA _CONKY_KEY_ALIASES=(
     ["security-status.dns"]="data.dns.dnscrypt_active"
 )
 
+# THE STATE STAMP (round 3b, inspector B, 2026-10-01). Every Kodachi state mutation
+# (tor-switch, routing-switch, dns-switch, health-control) ends by writing
+# /run/kodachi/state-changed-at ("<unix_secs> <source>") as root. A snapshot written at or
+# before that second describes the state BEFORE the change, so every reader below treats
+# it as a MISS, never as a value: the fast path, the fresh-snapshot short-circuit, the batch
+# read and the stale last-resort read. conky-status then answers from its own cache with
+# the state fields demoted to unknown (collector/mod.rs demote_unfresh_state), and
+# focus-alert.sh starts the post-change refresh at once. The rule is conky-status
+# fact_freshness.rs: usable only when written strictly after the stamp. Its trust rule is
+# fact_freshness.rs read_state_stamp_at too: no directory or no file reads as 0 (no change
+# since boot); a directory or file that is not root-owned and closed to group/other writes,
+# a file that is not a regular file (a symlink is not), or an unreadable one reads as
+# _CONKY_UNTRUSTED_STAMP ("changed now and later", so nothing is served and every reader
+# falls through to conky-status, which applies the same rule); a trusted file whose first
+# token is not a number reads as 0. The names are assigned here, never taken from the
+# environment.
+_CONKY_STATE_STAMP_FILE="/run/kodachi/state-changed-at"
+_CONKY_STATE_STAMP_UID=0
+_CONKY_UNTRUSTED_STAMP=9223372036854775807
+
+# Sets _CONKY_SNAP_TS (the snapshot's mtime) and _CONKY_STAMP_TS (the stamp's seconds, 0
+# when absent or untrusted) with ONE stat process for both files, the same process count
+# the snapshot-only stat cost before. Returns 1 when the snapshot cannot be stat'ed.
+_conky_stamp_meta_trusted() { # <uid> <hex mode> <hex type bits wanted>
+    [[ "$1" == "$_CONKY_STATE_STAMP_UID" && "$2" =~ ^[0-9a-f]{1,8}$ ]] || return 1
+    # lstat type bits, and neither group nor other may write.
+    (( (16#$2 & 16#F000) == 16#$3 && (16#$2 & 8#022) == 0 ))
+}
+
+_conky_snapshot_times() {
+    local snapshot_file="${1:-}" stamp_dir name ts uid mode tok _rest
+    local dir_seen=0 dir_ok=0 file_seen=0 file_ok=0
+    _CONKY_SNAP_TS=""
+    _CONKY_STAMP_TS=0
+    [[ -n "$snapshot_file" ]] || return 1
+    stamp_dir="${_CONKY_STATE_STAMP_FILE%/*}"
+    while IFS='|' read -r name ts uid mode; do
+        if [[ "$name" == "$snapshot_file" ]]; then
+            _CONKY_SNAP_TS="$ts"
+        elif [[ "$name" == "$stamp_dir" ]]; then
+            dir_seen=1
+            _conky_stamp_meta_trusted "$uid" "$mode" 4000 && dir_ok=1
+        elif [[ "$name" == "$_CONKY_STATE_STAMP_FILE" ]]; then
+            file_seen=1
+            _conky_stamp_meta_trusted "$uid" "$mode" 8000 && file_ok=1
+        fi
+    done < <(stat -c '%n|%Y|%u|%f' -- "$snapshot_file" "$stamp_dir" "$_CONKY_STATE_STAMP_FILE" 2>/dev/null)
+    if (( dir_seen == 1 && dir_ok == 0 )); then
+        _CONKY_STAMP_TS="$_CONKY_UNTRUSTED_STAMP"
+    elif (( file_seen == 1 )); then
+        if (( file_ok == 1 )) && { IFS=' ' read -r tok _rest < "$_CONKY_STATE_STAMP_FILE"; } 2>/dev/null; then
+            [[ "$tok" =~ ^[0-9]{1,18}$ ]] && _CONKY_STAMP_TS=$((10#$tok))
+        elif (( file_ok == 1 )) && [[ -r "$_CONKY_STATE_STAMP_FILE" ]]; then
+            # read returns 1 on a file with no trailing newline but still fills tok.
+            [[ "${tok:-}" =~ ^[0-9]{1,18}$ ]] && _CONKY_STAMP_TS=$((10#$tok))
+        else
+            _CONKY_STAMP_TS="$_CONKY_UNTRUSTED_STAMP"
+        fi
+    fi
+    [[ "$_CONKY_SNAP_TS" =~ ^[0-9]+$ ]]
+}
+
 # Fast path: read a value directly from the snapshot JSON without spawning
 # the conky-status binary. Uses jq for extraction. Returns 1 if snapshot
 # is stale/missing or key not found (caller falls back to binary).
@@ -246,8 +310,10 @@ _conky_snapshot_read() {
     [[ -s "$snapshot_file" ]] || return 1
     local now_ts file_ts age
     printf -v now_ts '%(%s)T' -1 2>/dev/null || now_ts=$(date +%s 2>/dev/null || echo 0)
-    file_ts=$(stat -c %Y "$snapshot_file" 2>/dev/null || echo 0)
-    [[ "$file_ts" =~ ^[0-9]+$ ]] || return 1
+    _conky_snapshot_times "$snapshot_file" || return 1
+    file_ts="$_CONKY_SNAP_TS"
+    # Round 3b: a snapshot from before the last state change is a miss, stale reads included.
+    (( file_ts > _CONKY_STAMP_TS )) || return 1
     if [[ "$allow_stale" != "true" ]]; then
         age=$((now_ts - file_ts))
         (( age <= ttl )) || return 1
@@ -301,8 +367,11 @@ _conky_snapshot_is_fresh() {
     [[ -s "$snapshot_file" ]] || return 1
     local now_ts file_ts age
     printf -v now_ts '%(%s)T' -1 2>/dev/null || now_ts=$(date +%s 2>/dev/null || echo 0)
-    file_ts=$(stat -c %Y "$snapshot_file" 2>/dev/null || echo 0)
-    [[ "$file_ts" =~ ^[0-9]+$ ]] || return 1
+    _conky_snapshot_times "$snapshot_file" || return 1
+    file_ts="$_CONKY_SNAP_TS"
+    # Round 3b: a snapshot from before the last state change is not fresh, so a key it
+    # lacks goes to the binary instead of short-circuiting to the caller's default.
+    (( file_ts > _CONKY_STAMP_TS )) || return 1
     age=$((now_ts - file_ts))
     (( age <= ttl ))
 }
@@ -636,6 +705,17 @@ conky_gateway_get_multiline_or_default() {
     fi
 }
 
+# THE ONE known-flag predicate (round 3 inspector, 2026-10-01): a `*_known` value read from
+# the snapshot is known ONLY when it is literally true (case and whitespace ignored). A
+# "false", null, "?", an empty answer or any other token is unknown, so an Off that rides
+# on it is never shown as measured. Every conky script that gates on a `*_known` key calls
+# this instead of comparing to "false" itself.
+conky_known_is_true() {
+    local raw="${1,,}"
+    raw="${raw//[[:space:]]/}"
+    [[ "$raw" == "true" ]]
+}
+
 conky_gateway_bool_01() {
     local raw="$1"
     raw=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | xargs)
@@ -829,8 +909,10 @@ conky_gateway_get_many() {
 
     local now_ts file_ts age
     printf -v now_ts '%(%s)T' -1 2>/dev/null || now_ts=$(date +%s 2>/dev/null || echo 0)
-    file_ts=$(stat -c %Y "$snapshot_file" 2>/dev/null || echo 0)
-    [[ "$file_ts" =~ ^[0-9]+$ ]] || { _conky_many_fallback; return 0; }
+    _conky_snapshot_times "$snapshot_file" || { _conky_many_fallback; return 0; }
+    file_ts="$_CONKY_SNAP_TS"
+    # Round 3b: a snapshot from before the last state change is never served as a batch.
+    (( file_ts > _CONKY_STAMP_TS )) || { _conky_many_fallback; return 0; }
     age=$((now_ts - file_ts))
     (( age <= ttl )) || { _conky_many_fallback; return 0; }
 
@@ -865,14 +947,20 @@ conky_gateway_get_many() {
     # ANTI-VACUITY: jq must have produced exactly one line per key. A short read means the
     # program did not do what this function claims, and silently printing fewer values than
     # the caller asked for would shift every value it unpacks by one.
-    local line_count
-    line_count=$(printf '%s\n' "$out" | grep -c '' )
-    if [[ "$line_count" -ne "${#keys[@]}" ]]; then
+    #
+    # F19 (2026-09-30): counted and emitted with builtins. `printf | grep -c ''` and
+    # `printf | while read` cost four processes per call; mapfile over a here-string
+    # yields the same line count (a here-string appends the one newline printf did) and
+    # the same lines, with none.
+    local -a _many_lines=()
+    mapfile -t _many_lines <<< "$out"
+    if [[ "${#_many_lines[@]}" -ne "${#keys[@]}" ]]; then
         _conky_many_fallback
         return 0
     fi
 
-    printf '%s\n' "$out" | while IFS= read -r line; do
+    local line
+    for line in "${_many_lines[@]}"; do
         if [[ -z "$line" || "$line" == "__CONKY_NULL__" ]]; then
             printf '%s\n' "$default_value"
         else

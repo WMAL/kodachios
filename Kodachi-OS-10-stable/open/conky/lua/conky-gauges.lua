@@ -171,7 +171,9 @@ local ping_update_counter = 0
 
 --------------------------------------------------------------------------------
 -- Security status cache (AUTH, VPN, TORRIFIED, DNS)
-local security_status = {auth=0, vpn=0, torrified=0, dns=0}
+-- 2 = unknown (security-status.sh's own token): nothing has been read yet, so the
+-- blocks start amber, not the dim "off" (inspector 2026-09-30, C4 class).
+local security_status = {auth=2, vpn=2, torrified=2, dns=2}
 local security_update_counter = 0
 
 --------------------------------------------------------------------------------
@@ -183,10 +185,19 @@ local function get_security_status()
         local result = gateway_script_value("security-status.sh", "all", nil)
         if result then
             local auth, vpn, torrified, dns = result:match("(%d)%s+(%d)%s+(%d)%s+(%d)")
-            security_status.auth = tonumber(auth) or 0
-            security_status.vpn = tonumber(vpn) or 0
-            security_status.torrified = tonumber(torrified) or 0
-            security_status.dns = tonumber(dns) or 0
+            -- A malformed line is an unread value (2), never an "off" (0).
+            security_status.auth = tonumber(auth) or 2
+            security_status.vpn = tonumber(vpn) or 2
+            security_status.torrified = tonumber(torrified) or 2
+            security_status.dns = tonumber(dns) or 2
+        else
+            -- No answer at all (timeout, missing script) is unread too. Without this arm
+            -- the persistent table kept the previous cycle's values for ever, so a lost
+            -- reading still drew the last known on/off (inspector pass 2, item 7).
+            security_status.auth = 2
+            security_status.vpn = 2
+            security_status.torrified = 2
+            security_status.dns = 2
         end
     end
     return security_status

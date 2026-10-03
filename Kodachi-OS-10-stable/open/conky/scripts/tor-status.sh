@@ -22,6 +22,12 @@
 # Uses the conky-status gateway where applicable.
 
 set -u
+# F19: answer from the snapshot-generation memo when nothing this script reads has
+# changed (conky-snapshot-memo.sh explains why the output is identical). Any doubt
+# falls through to the unchanged body below.
+if [[ -z "${CONKY_MEMO_INNER:-}" && -r "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" ]]; then
+    . "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" && conky_memo_run "${BASH_SOURCE[0]}" "$@"
+fi
 FIELD="${1:-tor}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -48,6 +54,36 @@ case "$FIELD" in
         case "$value" in
             ""|"N/A"|"null") ;;
             *) printf '(%s)\n' "${value// of //}" ;;
+        esac
+        ;;
+    # F17 conky side (2026-09-30): the security panel rendered these three rows as
+    #   ${if_match "${execi 17 tor-status.sh X}" == "On"}${color1}On${else}${color6}Off${endif}
+    # so "?" (adapters/tor.rs publishes it when tor-switch did not answer) and "N/A"
+    # (no tor block in the snapshot) both printed a red "Off": a failed read shown as
+    # "not Tor". These modes print the coloured value for ${execpi}: On and Off exactly
+    # as before, anything else "Unknown". One process per row instead of one per
+    # if_match branch.
+    tor-conky|tordns-conky|torrified-conky)
+        case "$FIELD" in
+            tor-conky) _tor_key="data.tor.onoff" ;;
+            tordns-conky) _tor_key="data.tor.tor_dns_onoff" ;;
+            *) _tor_key="data.tor.torrified_onoff" ;;
+        esac
+        case "$(conky_gateway_get_or_default "$_tor_key" "N/A" 2 "$BIN")" in
+            On) printf '%s\n' '${color1}On' ;;
+            Off) printf '%s\n' '${color6}Off' ;;
+            *) printf '%s\n' '${color7}Unknown' ;;
+        esac
+        ;;
+    # DNSCrypt's row, one exec with an amber third state (inspector pass 6): the old
+    # two-exec if_match chain printed "Off" for "Unknown", which conky-status
+    # publishes when the dnscrypt read failed or lacked a field.
+    dnscrypt-conky)
+        case "$(conky_gateway_get_or_default "data.dns.dnscrypt_onoff" "N/A" 2 "$BIN")" in
+            On) printf '%s\n' '${color1}On' ;;
+            Up) printf '%s\n' '${color7}Up' ;;
+            Off) printf '%s\n' '${color6}Off' ;;
+            *) printf '%s\n' '${color7}Unknown' ;;  # dnscrypt read failed or lacked a field
         esac
         ;;
     *) echo "N/A" ;;

@@ -229,10 +229,14 @@ count_misplaced_panels() {
     #      printed, so no future pipeline change can hand the caller a value that
     #      `(( ))` chokes on.
     local raw
-    raw=$( (xwininfo -root -tree 2>/dev/null || true) \
-        | { grep '("Conky"' || true; } \
+    #
+    # F19 (2026-09-30): awk does the '("Conky"' filter itself. The old form spent two
+    # subshells and a grep on it every 5 s. awk still prints its count on no match, a
+    # failing xwininfo still ends as 0 through the normalisation below, and awk remains
+    # the only producer of the number.
+    raw=$( xwininfo -root -tree 2>/dev/null \
         | awk -v miny="$MIN_PANEL_Y" -v minw="$MIN_PANEL_WIDTH" '
-            {
+            /\("Conky"/ {
                 geom = $(NF-1); pos = $NF
                 split(geom, g, "x"); w = g[1] + 0
                 n = split(pos, p, "+")
@@ -243,6 +247,75 @@ count_misplaced_panels() {
     raw="${raw%%$'\n'*}"
     [[ "$raw" =~ ^[0-9]+$ ]] || raw=0
     printf '%s\n' "$raw"
+}
+
+# F19 (2026-09-30): ONE pgrep PER TICK FOR BOTH THE COUNT AND THE LIVE SET.
+#
+# Each 5 s tick used to run count_kodachi_conky (pgrep, `id -u`, one `tr` per conky
+# pid) and then missing_panel_configs (the awk over the launcher, pgrep and `id -u`
+# again, `tr`, `grep -oE` and `head` per pid, `sort -u`, two process substitutions,
+# `comm`), about forty processes a tick, around 480 a minute, for a loop that on a
+# healthy desktop only confirms five panels are up.
+#
+# `pgrep -a` prints each pid with the same argv that /proc/<pid>/cmdline holds, joined
+# by spaces, which is exactly the string the two functions above matched, so the
+# count, the per-UID scoping (still `pgrep -u <euid>`, now from $EUID instead of an
+# `id -u` subshell) and the "real conky process, kodachi conkyrc config" rule are
+# unchanged. The FIRST conkyrc-*.conf in the argv is the one `grep -oE | head -1`
+# returned. The expected list is the same awk over the launcher, sorted once, and
+# re-read every 60 s rather than every 5 s. Missing = expected entries absent from
+# the live set, in the expected list's sorted order, which is what
+# `comm -23 <(sort -u expected) <(live)` printed.
+WD_COUNT=0
+WD_MISSING=""
+WD_LIVE=()
+WD_EXPECTED=()
+WD_EXPECTED_TS=0
+
+_wd_scan() {
+    local line pid args base n=0
+    local -A seen=()
+    WD_LIVE=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        pid="${line%% *}"
+        [[ "$pid" =~ ^[0-9]+$ ]] || continue
+        args=""
+        [[ "$line" == *" "* ]] && args="${line#* }"
+        [[ "$args " =~ kodachi.*conkyrc-.*\.conf ]] || continue
+        n=$((n + 1))
+        if [[ "$args" =~ (conkyrc-[A-Za-z0-9_-]+\.conf) ]]; then
+            base="${BASH_REMATCH[1]}"
+            if [[ -z "${seen[$base]+x}" ]]; then
+                seen[$base]=1
+                WD_LIVE+=("$base")
+            fi
+        fi
+    done < <(pgrep -u "$EUID" -a -x conky 2>/dev/null || true)
+    WD_COUNT="$n"
+}
+
+_wd_missing() {
+    local now e l found
+    printf -v now '%(%s)T' -1 2>/dev/null || now=0
+    if (( ${#WD_EXPECTED[@]} == 0 || now - WD_EXPECTED_TS >= 60 || now < WD_EXPECTED_TS )); then
+        WD_EXPECTED=()
+        mapfile -t WD_EXPECTED < <(expected_panel_configs "$launcher" | sort -u)
+        WD_EXPECTED_TS="$now"
+    fi
+    WD_MISSING=""
+    for e in "${WD_EXPECTED[@]}"; do
+        [[ -n "$e" ]] || continue
+        found=0
+        for l in "${WD_LIVE[@]}"; do
+            if [[ "$l" == "$e" ]]; then
+                found=1
+                break
+            fi
+        done
+        (( found )) || WD_MISSING+="$e "
+    done
+    WD_MISSING="${WD_MISSING% }"
 }
 
 # Check if the X display is still alive. Returns 1 if display is gone (shutdown/logout).
@@ -339,7 +412,8 @@ while true; do
         break
     fi
 
-    current_count="$(count_kodachi_conky)"
+    _wd_scan
+    current_count="$WD_COUNT"
 
     # A count inside the band is NOT proof every panel is alive. Ask which.
     # The repair is still the launcher's existing whole-set relaunch, because the
@@ -348,8 +422,8 @@ while true; do
     # 1b8c9019a and the misplaced_streak machinery exist for. So this changes
     # DETECTION, not the repair path: the repair is the same tested one that a
     # count-based trigger already uses.
-    missing_named="$(missing_panel_configs "$launcher" | tr '\n' ' ')"
-    missing_named="${missing_named% }"
+    _wd_missing
+    missing_named="$WD_MISSING"
     if (( current_count >= MIN_PANELS )) && (( current_count <= MAX_PANELS )) && [[ -n "$missing_named" ]]; then
         missing_streak=$((missing_streak + 1))
         log "Count ${current_count} is inside ${MIN_PANELS}-${MAX_PANELS} but these panels are NOT running: ${missing_named} (streak=${missing_streak}/${RESTART_AFTER_MISSES})"

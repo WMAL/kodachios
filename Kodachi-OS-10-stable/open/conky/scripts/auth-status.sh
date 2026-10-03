@@ -22,10 +22,29 @@
 # Uses the conky-status gateway where applicable.
 
 set -u
+# F19: answer from the snapshot-generation memo when nothing this script reads has
+# changed (conky-snapshot-memo.sh explains why the output is identical). Any doubt
+# falls through to the unchanged body below.
+if [[ -z "${CONKY_MEMO_INNER:-}" && -r "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" ]]; then
+    . "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" && conky_memo_run "${BASH_SOURCE[0]}" "$@"
+fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/conky-gateway-common.sh" 2>/dev/null || true
 BIN=$(conky_gateway_find_binary 2>/dev/null || true)
+# `conky` prints the Login row's coloured token for ${execpi}: On / Off, and a neutral
+# "?" when the auth read did not answer (inspector pass 7: the two-way if_match
+# showed a red "Off" for conky-status's new "?"). Amber is already this row's "On".
+if [[ "${1:-}" == "conky" ]]; then
+    value="?"
+    [[ -n "$BIN" ]] && value="$(conky_gateway_get_or_default "auth-status" "?" 2 "$BIN")"
+    case "$value" in
+        On) printf '%s\n' '${color7}On' ;;
+        Off) printf '%s\n' '${color6}Off' ;;
+        *) printf '%s\n' '${color3}?' ;;
+    esac
+    exit 0
+fi
 if [[ -z "$BIN" ]]; then
     echo "N/A"
     exit 0

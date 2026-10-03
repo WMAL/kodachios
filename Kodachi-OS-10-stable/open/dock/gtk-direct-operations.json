@@ -5299,7 +5299,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field torrify",
-            "cellId": "rust.gtk-preset.66ed04c4204d121d"
+            "cellId": "rust.gtk-preset.eebb3f07de8188c7"
           }
         ]
       },
@@ -7141,7 +7141,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field session",
-            "cellId": "rust.gtk-preset.9e5079bddb5eb093"
+            "cellId": "rust.gtk-preset.c2c350d32dd07dcf"
           }
         ]
       },
@@ -7170,7 +7170,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field login",
-            "cellId": "rust.gtk-preset.379692cdaf467f61"
+            "cellId": "rust.gtk-preset.aeeb58d42c29de20"
           }
         ]
       },
@@ -7315,7 +7315,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field ip",
-            "cellId": "rust.gtk-preset.08911afa08bbc746"
+            "cellId": "rust.gtk-preset.89ed4c7d3a6de3ef"
           }
         ]
       },
@@ -7344,7 +7344,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field localip",
-            "cellId": "rust.gtk-preset.e0f404f5c2bc68a5"
+            "cellId": "rust.gtk-preset.325d0df1f4ea38a3"
           }
         ]
       },
@@ -7373,7 +7373,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field internet",
-            "cellId": "rust.gtk-preset.6bea4d771c9e7e69"
+            "cellId": "rust.gtk-preset.8cf4103e93882fa1"
           }
         ]
       },
@@ -7402,7 +7402,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field tor",
-            "cellId": "rust.gtk-preset.4bfb6d6fe7060b0c"
+            "cellId": "rust.gtk-preset.2803ddb57a51ef0f"
           }
         ]
       },
@@ -7460,7 +7460,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field torrify",
-            "cellId": "rust.gtk-preset.66ed04c4204d121d"
+            "cellId": "rust.gtk-preset.eebb3f07de8188c7"
           }
         ]
       },
@@ -7489,7 +7489,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field vpn",
-            "cellId": "rust.gtk-preset.ac8393b627d65185"
+            "cellId": "rust.gtk-preset.2d9494ef2d421192"
           }
         ]
       },
@@ -7518,7 +7518,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field dns",
-            "cellId": "rust.gtk-preset.f8a1deb7915489f1"
+            "cellId": "rust.gtk-preset.0d71127545f4ffe9"
           }
         ]
       },
@@ -7547,7 +7547,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field dnsservers",
-            "cellId": "rust.gtk-preset.841efd129c9304be"
+            "cellId": "rust.gtk-preset.1ad1ea13ba49df1c"
           }
         ]
       },
@@ -7576,7 +7576,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field dnscrypt",
-            "cellId": "rust.gtk-preset.c2b331083e14ef22"
+            "cellId": "rust.gtk-preset.a98c251cb351b655"
           }
         ]
       },
@@ -7605,7 +7605,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field pihole",
-            "cellId": "rust.gtk-preset.d4312ddd3212b162"
+            "cellId": "rust.gtk-preset.64f746076fbf0444"
           }
         ]
       },
@@ -7634,7 +7634,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field firewall",
-            "cellId": "rust.gtk-preset.3f39752caeb18bbd"
+            "cellId": "rust.gtk-preset.cfc308e8c49acf0e"
           }
         ]
       },
@@ -7663,7 +7663,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field ipv6",
-            "cellId": "rust.gtk-preset.c9822883f8557565"
+            "cellId": "rust.gtk-preset.b933f0fbb1ce4db7"
           }
         ]
       },
@@ -7692,7 +7692,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field score",
-            "cellId": "rust.gtk-preset.3bc067b19f88385d"
+            "cellId": "rust.gtk-preset.816590f59caf9440"
           }
         ]
       },
@@ -7721,7 +7721,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field version",
-            "cellId": "rust.gtk-preset.3c5eeb8fd7217593"
+            "cellId": "rust.gtk-preset.1cbffef2489aa789"
           }
         ]
       },
@@ -9278,7 +9278,7 @@
             "registryLine": 382,
             "handler": "generic",
             "registryConfirm": false,
-            "payload": "sudo ntpdig -S time.cloudflare.com || sudo ntpdig -S pool.ntp.org || sudo ntpdig -S time.nist.gov || { sudo timedatectl set-ntp true && timeout 30 sh -c 'until [ \"$(timedatectl show -p NTPSynchronized --value 2>/dev/null)\" = yes ]; do sleep 1; done'; } || sudo ntpdate pool.ntp.org || sudo ntpdate time.nist.gov || sudo /usr/sbin/ntpd -gq",
+            "payload": "{ sudo ntpdig -S time.cloudflare.com || sudo ntpdig -S pool.ntp.org || sudo ntpdig -S time.nist.gov || { sudo timedatectl set-ntp true && timeout 30 sh -c 'until [ \"$(timedatectl show -p NTPSynchronized --value 2>/dev/null)\" = yes ]; do sleep 1; done'; } || sudo ntpdate pool.ntp.org || sudo ntpdate time.nist.gov || sudo /usr/sbin/ntpd -gq; } && sudo sh -c 'mkdir -p /run/kodachi && printf \"%s rofi-sync\\n\" \"$(date +%s)\" > /run/kodachi/ntp-synced && chmod 0644 /run/kodachi/ntp-synced'",
             "cellId": "rust.health-control.sync-system-time"
           }
         ]
@@ -11081,7 +11081,7 @@
             "handler": "rofi-output",
             "registryConfirm": false,
             "payload": "/usr/local/libexec/kodachi/kodachi-dock-status field ip",
-            "cellId": "rust.gtk-preset.08911afa08bbc746"
+            "cellId": "rust.gtk-preset.89ed4c7d3a6de3ef"
           }
         ]
       },
@@ -30496,7 +30496,7 @@
         "label": "Sync System Time",
         "registryConfirm": false,
         "handler": "generic",
-        "payload": "sudo ntpdig -S time.cloudflare.com || sudo ntpdig -S pool.ntp.org || sudo ntpdig -S time.nist.gov || { sudo timedatectl set-ntp true && timeout 30 sh -c 'until [ \"$(timedatectl show -p NTPSynchronized --value 2>/dev/null)\" = yes ]; do sleep 1; done'; } || sudo ntpdate pool.ntp.org || sudo ntpdate time.nist.gov || sudo /usr/sbin/ntpd -gq",
+        "payload": "{ sudo ntpdig -S time.cloudflare.com || sudo ntpdig -S pool.ntp.org || sudo ntpdig -S time.nist.gov || { sudo timedatectl set-ntp true && timeout 30 sh -c 'until [ \"$(timedatectl show -p NTPSynchronized --value 2>/dev/null)\" = yes ]; do sleep 1; done'; } || sudo ntpdate pool.ntp.org || sudo ntpdate time.nist.gov || sudo /usr/sbin/ntpd -gq; } && sudo sh -c 'mkdir -p /run/kodachi && printf \"%s rofi-sync\\n\" \"$(date +%s)\" > /run/kodachi/ntp-synced && chmod 0644 /run/kodachi/ntp-synced'",
         "line": 382,
         "confirmationRequired": true,
         "safetyClass": "high",
@@ -37216,14 +37216,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.d7225c612fc03533",
-        "cellId": "rust.gtk-preset.f8a1deb7915489f1",
+        "cellId": "rust.gtk-preset.0d71127545f4ffe9",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.f8a1deb7915489f1",
+            "cellId": "rust.gtk-preset.0d71127545f4ffe9",
             "kind": "rust",
             "argv": [
               "get",
-              "data.dns.mode"
+              "data.dns.mode",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -37232,18 +37234,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -37322,10 +37312,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.f8a1deb7915489f1",
+              "commandId": "rust.gtk-preset.0d71127545f4ffe9",
               "argv": [
                 "get",
-                "data.dns.mode"
+                "data.dns.mode",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -37370,14 +37362,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.f9c71953500dc001",
-        "cellId": "rust.gtk-preset.841efd129c9304be",
+        "cellId": "rust.gtk-preset.1ad1ea13ba49df1c",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.841efd129c9304be",
+            "cellId": "rust.gtk-preset.1ad1ea13ba49df1c",
             "kind": "rust",
             "argv": [
               "get",
-              "data.dns.nameservers"
+              "data.dns.nameservers",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -37386,18 +37380,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -37476,10 +37458,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.841efd129c9304be",
+              "commandId": "rust.gtk-preset.1ad1ea13ba49df1c",
               "argv": [
                 "get",
-                "data.dns.nameservers"
+                "data.dns.nameservers",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -37524,14 +37508,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.99b28f64c420547d",
-        "cellId": "rust.gtk-preset.c2b331083e14ef22",
+        "cellId": "rust.gtk-preset.a98c251cb351b655",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.c2b331083e14ef22",
+            "cellId": "rust.gtk-preset.a98c251cb351b655",
             "kind": "rust",
             "argv": [
               "get",
-              "data.dns.dnscrypt_active"
+              "data.dns.dnscrypt_onoff",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -37540,18 +37526,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -37630,10 +37604,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.c2b331083e14ef22",
+              "commandId": "rust.gtk-preset.a98c251cb351b655",
               "argv": [
                 "get",
-                "data.dns.dnscrypt_active"
+                "data.dns.dnscrypt_onoff",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -37850,14 +37826,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.b32835cc569a4a7f",
-        "cellId": "rust.gtk-preset.3f39752caeb18bbd",
+        "cellId": "rust.gtk-preset.cfc308e8c49acf0e",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.3f39752caeb18bbd",
+            "cellId": "rust.gtk-preset.cfc308e8c49acf0e",
             "kind": "rust",
             "argv": [
               "get",
-              "data.health.firewall"
+              "data.health.firewall_onoff",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -37866,18 +37844,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -37956,10 +37922,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.3f39752caeb18bbd",
+              "commandId": "rust.gtk-preset.cfc308e8c49acf0e",
               "argv": [
                 "get",
-                "data.health.firewall"
+                "data.health.firewall_onoff",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -38004,14 +37972,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.bd41806347620a13",
-        "cellId": "rust.gtk-preset.c9822883f8557565",
+        "cellId": "rust.gtk-preset.b933f0fbb1ce4db7",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.c9822883f8557565",
+            "cellId": "rust.gtk-preset.b933f0fbb1ce4db7",
             "kind": "rust",
             "argv": [
               "get",
-              "data.health.ipv6_disabled"
+              "data.health.ipv6_state",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -38020,18 +37990,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -38110,10 +38068,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.c9822883f8557565",
+              "commandId": "rust.gtk-preset.b933f0fbb1ce4db7",
               "argv": [
                 "get",
-                "data.health.ipv6_disabled"
+                "data.health.ipv6_state",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -38158,14 +38118,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.964ef2ec351fb2f0",
-        "cellId": "rust.gtk-preset.6bea4d771c9e7e69",
+        "cellId": "rust.gtk-preset.8cf4103e93882fa1",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.6bea4d771c9e7e69",
+            "cellId": "rust.gtk-preset.8cf4103e93882fa1",
             "kind": "rust",
             "argv": [
               "get",
-              "data.health.internet.status"
+              "data.health.internet.status",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -38174,18 +38136,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -38264,10 +38214,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.6bea4d771c9e7e69",
+              "commandId": "rust.gtk-preset.8cf4103e93882fa1",
               "argv": [
                 "get",
-                "data.health.internet.status"
+                "data.health.internet.status",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -38408,14 +38360,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.547228369519eeb3",
-        "cellId": "rust.gtk-preset.e0f404f5c2bc68a5",
+        "cellId": "rust.gtk-preset.325d0df1f4ea38a3",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.e0f404f5c2bc68a5",
+            "cellId": "rust.gtk-preset.325d0df1f4ea38a3",
             "kind": "rust",
             "argv": [
               "get",
-              "data.system.network.local_ip"
+              "data.system.network.local_ip",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -38424,18 +38378,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -38514,10 +38456,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.e0f404f5c2bc68a5",
+              "commandId": "rust.gtk-preset.325d0df1f4ea38a3",
               "argv": [
                 "get",
-                "data.system.network.local_ip"
+                "data.system.network.local_ip",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -38658,14 +38602,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.2051cc3c9a5f2136",
-        "cellId": "rust.gtk-preset.08911afa08bbc746",
+        "cellId": "rust.gtk-preset.89ed4c7d3a6de3ef",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.08911afa08bbc746",
+            "cellId": "rust.gtk-preset.89ed4c7d3a6de3ef",
             "kind": "rust",
             "argv": [
               "get",
-              "data.ip.public"
+              "data.ip.public_display",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -38674,18 +38620,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -38764,10 +38698,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.08911afa08bbc746",
+              "commandId": "rust.gtk-preset.89ed4c7d3a6de3ef",
               "argv": [
                 "get",
-                "data.ip.public"
+                "data.ip.public_display",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -38825,14 +38761,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.cd230706a6663c99",
-        "cellId": "rust.gtk-preset.9e5079bddb5eb093",
+        "cellId": "rust.gtk-preset.c2c350d32dd07dcf",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.9e5079bddb5eb093",
+            "cellId": "rust.gtk-preset.c2c350d32dd07dcf",
             "kind": "rust",
             "argv": [
               "get",
-              "data.auth.session_id"
+              "data.auth.session_id",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -38841,18 +38779,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -38931,10 +38857,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.9e5079bddb5eb093",
+              "commandId": "rust.gtk-preset.c2c350d32dd07dcf",
               "argv": [
                 "get",
-                "data.auth.session_id"
+                "data.auth.session_id",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -39075,14 +39003,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.a2da8cffd9fbdf36",
-        "cellId": "rust.gtk-preset.d4312ddd3212b162",
+        "cellId": "rust.gtk-preset.64f746076fbf0444",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.d4312ddd3212b162",
+            "cellId": "rust.gtk-preset.64f746076fbf0444",
             "kind": "rust",
             "argv": [
               "get",
-              "data.dns.pihole_active"
+              "data.dns.pihole_onoff",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -39091,18 +39021,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -39181,10 +39099,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.d4312ddd3212b162",
+              "commandId": "rust.gtk-preset.64f746076fbf0444",
               "argv": [
                 "get",
-                "data.dns.pihole_active"
+                "data.dns.pihole_onoff",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -39229,14 +39149,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.48986cdf746019c4",
-        "cellId": "rust.gtk-preset.3bc067b19f88385d",
+        "cellId": "rust.gtk-preset.816590f59caf9440",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.3bc067b19f88385d",
+            "cellId": "rust.gtk-preset.816590f59caf9440",
             "kind": "rust",
             "argv": [
               "get",
-              "data.health.score_display"
+              "data.health.score_display",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -39245,18 +39167,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -39335,10 +39245,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.3bc067b19f88385d",
+              "commandId": "rust.gtk-preset.816590f59caf9440",
               "argv": [
                 "get",
-                "data.health.score_display"
+                "data.health.score_display",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -39383,14 +39295,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.b9a23007f7f35be9",
-        "cellId": "rust.gtk-preset.379692cdaf467f61",
+        "cellId": "rust.gtk-preset.aeeb58d42c29de20",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.379692cdaf467f61",
+            "cellId": "rust.gtk-preset.aeeb58d42c29de20",
             "kind": "rust",
             "argv": [
               "get",
-              "data.auth.authenticated_human"
+              "data.auth.authenticated_human",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -39399,18 +39313,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -39489,10 +39391,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.379692cdaf467f61",
+              "commandId": "rust.gtk-preset.aeeb58d42c29de20",
               "argv": [
                 "get",
-                "data.auth.authenticated_human"
+                "data.auth.authenticated_human",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -39633,14 +39537,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.f416c37dda339a11",
-        "cellId": "rust.gtk-preset.4bfb6d6fe7060b0c",
+        "cellId": "rust.gtk-preset.2803ddb57a51ef0f",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.4bfb6d6fe7060b0c",
+            "cellId": "rust.gtk-preset.2803ddb57a51ef0f",
             "kind": "rust",
             "argv": [
               "get",
-              "data.ip.tor.ip"
+              "data.ip.tor.ip_display",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -39649,18 +39555,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -39739,10 +39633,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.4bfb6d6fe7060b0c",
+              "commandId": "rust.gtk-preset.2803ddb57a51ef0f",
               "argv": [
                 "get",
-                "data.ip.tor.ip"
+                "data.ip.tor.ip_display",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -39883,14 +39779,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.01291d45c7e1c3c3",
-        "cellId": "rust.gtk-preset.66ed04c4204d121d",
+        "cellId": "rust.gtk-preset.eebb3f07de8188c7",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.66ed04c4204d121d",
+            "cellId": "rust.gtk-preset.eebb3f07de8188c7",
             "kind": "rust",
             "argv": [
               "get",
-              "data.ip.effective_source"
+              "data.tor.torrified_onoff",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -39899,18 +39797,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -39989,10 +39875,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.66ed04c4204d121d",
+              "commandId": "rust.gtk-preset.eebb3f07de8188c7",
               "argv": [
                 "get",
-                "data.ip.effective_source"
+                "data.tor.torrified_onoff",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -40050,14 +39938,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.fd478b2ce0e7e94d",
-        "cellId": "rust.gtk-preset.ac8393b627d65185",
+        "cellId": "rust.gtk-preset.2d9494ef2d421192",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.ac8393b627d65185",
+            "cellId": "rust.gtk-preset.2d9494ef2d421192",
             "kind": "rust",
             "argv": [
               "get",
-              "data.routing.connected"
+              "data.routing.onoff",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -40066,18 +39956,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -40156,10 +40034,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.ac8393b627d65185",
+              "commandId": "rust.gtk-preset.2d9494ef2d421192",
               "argv": [
                 "get",
-                "data.routing.connected"
+                "data.routing.onoff",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -40204,14 +40084,16 @@
         "safetyClass": "safe",
         "compositeOrDynamic": false,
         "id": "gtk.operation.9d1a89986a56a550",
-        "cellId": "rust.gtk-preset.3c5eeb8fd7217593",
+        "cellId": "rust.gtk-preset.1cbffef2489aa789",
         "directBindings": [
           {
-            "cellId": "rust.gtk-preset.3c5eeb8fd7217593",
+            "cellId": "rust.gtk-preset.1cbffef2489aa789",
             "kind": "rust",
             "argv": [
               "get",
-              "data.system.os.local_version"
+              "data.system.os.local_version",
+              "--default",
+              "?"
             ],
             "executor": "execute_colonyops_service_command",
             "service": "conky-status",
@@ -40220,18 +40102,6 @@
             "needsSudo": false,
             "stdinParameters": [],
             "parameters": [
-              {
-                "name": "value",
-                "type": "text",
-                "required": false,
-                "flag": "--default",
-                "syntax": "--default <value>",
-                "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-                "default": null,
-                "sensitive": false,
-                "repeatable": false,
-                "positional": false
-              },
               {
                 "name": "refresh",
                 "type": "boolean",
@@ -40310,10 +40180,12 @@
           "orderedSteps": [
             {
               "stepId": 1,
-              "commandId": "rust.gtk-preset.3c5eeb8fd7217593",
+              "commandId": "rust.gtk-preset.1cbffef2489aa789",
               "argv": [
                 "get",
-                "data.system.os.local_version"
+                "data.system.os.local_version",
+                "--default",
+                "?"
               ],
               "condition": "always",
               "delaySeconds": null,
@@ -75285,9 +75157,9 @@
       }
     ],
     "digestAlgorithm": "sha256-canonical-json-v1",
-    "directOperationsSha256": "967646fc074a3cf9c0e9382f1468714e7cc71eb338e4f73f58267802639c2a7b",
-    "directBindingsDigest": "59eb31575d45bbf01270e6c99a575f8e9b49ae56ef03c07368d16ec7f24d5f18",
-    "commandWindowDigest": "dc56c224bbc8b98f5f82c26c251d1ef295d60a48890d4ec8e6e028b2f07a6791"
+    "directOperationsSha256": "62b281e5077c79de499e5a7d732f7b806202dbe2949505356e6b5fb9fd4e3bbb",
+    "directBindingsDigest": "bb896e585a685e4ec3d4473b709a60e9d4bc7d06e84d9e86679f76ff2fdd4a08",
+    "commandWindowDigest": "c72ccdb641802a73d479d23e7d081e1e5a677e17869c43f873ea61f05afb8c75"
   },
   "torPickers": {
     "producer": "kodachi-command-window",
@@ -94390,34 +94262,24 @@
       "exclusionReason": null
     },
     {
-      "id": "rust.gtk-preset.f8a1deb7915489f1",
+      "id": "rust.gtk-preset.0d71127545f4ffe9",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "DNS Mode (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / DNS Mode, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.dns.mode",
+      "syntaxTemplate": "conky-status get data.dns.mode --default ?",
       "examples": [
-        "conky-status get data.dns.mode"
+        "conky-status get data.dns.mode --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.dns.mode"
+        "data.dns.mode",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -94527,34 +94389,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.841efd129c9304be",
+      "id": "rust.gtk-preset.1ad1ea13ba49df1c",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "DNS Servers In Use (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / DNS Servers In Use, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.dns.nameservers",
+      "syntaxTemplate": "conky-status get data.dns.nameservers --default ?",
       "examples": [
-        "conky-status get data.dns.nameservers"
+        "conky-status get data.dns.nameservers --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.dns.nameservers"
+        "data.dns.nameservers",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -94664,34 +94516,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.c2b331083e14ef22",
+      "id": "rust.gtk-preset.a98c251cb351b655",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "DNSCrypt State (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / DNSCrypt State, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.dns.dnscrypt_active",
+      "syntaxTemplate": "conky-status get data.dns.dnscrypt_onoff --default ?",
       "examples": [
-        "conky-status get data.dns.dnscrypt_active"
+        "conky-status get data.dns.dnscrypt_onoff --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.dns.dnscrypt_active"
+        "data.dns.dnscrypt_onoff",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -94938,34 +94780,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.3f39752caeb18bbd",
+      "id": "rust.gtk-preset.cfc308e8c49acf0e",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "Firewall State (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / Firewall State, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.health.firewall",
+      "syntaxTemplate": "conky-status get data.health.firewall_onoff --default ?",
       "examples": [
-        "conky-status get data.health.firewall"
+        "conky-status get data.health.firewall_onoff --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.health.firewall"
+        "data.health.firewall_onoff",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -95075,34 +94907,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.c9822883f8557565",
+      "id": "rust.gtk-preset.b933f0fbb1ce4db7",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "IPv6 State (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / IPv6 State, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.health.ipv6_disabled",
+      "syntaxTemplate": "conky-status get data.health.ipv6_state --default ?",
       "examples": [
-        "conky-status get data.health.ipv6_disabled"
+        "conky-status get data.health.ipv6_state --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.health.ipv6_disabled"
+        "data.health.ipv6_state",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -95212,34 +95034,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.6bea4d771c9e7e69",
+      "id": "rust.gtk-preset.8cf4103e93882fa1",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "Internet State (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / Internet State, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.health.internet.status",
+      "syntaxTemplate": "conky-status get data.health.internet.status --default ?",
       "examples": [
-        "conky-status get data.health.internet.status"
+        "conky-status get data.health.internet.status --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.health.internet.status"
+        "data.health.internet.status",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -95349,34 +95161,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.e0f404f5c2bc68a5",
+      "id": "rust.gtk-preset.325d0df1f4ea38a3",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "My Local IP (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / My Local IP, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.system.network.local_ip",
+      "syntaxTemplate": "conky-status get data.system.network.local_ip --default ?",
       "examples": [
-        "conky-status get data.system.network.local_ip"
+        "conky-status get data.system.network.local_ip --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.system.network.local_ip"
+        "data.system.network.local_ip",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -95486,34 +95288,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.08911afa08bbc746",
+      "id": "rust.gtk-preset.89ed4c7d3a6de3ef",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "My Public IP (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / My Public IP, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.ip.public",
+      "syntaxTemplate": "conky-status get data.ip.public_display --default ?",
       "examples": [
-        "conky-status get data.ip.public"
+        "conky-status get data.ip.public_display --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.ip.public"
+        "data.ip.public_display",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -95623,34 +95415,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.9e5079bddb5eb093",
+      "id": "rust.gtk-preset.c2c350d32dd07dcf",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "My Session ID (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / My Session ID, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.auth.session_id",
+      "syntaxTemplate": "conky-status get data.auth.session_id --default ?",
       "examples": [
-        "conky-status get data.auth.session_id"
+        "conky-status get data.auth.session_id --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.auth.session_id"
+        "data.auth.session_id",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -95760,34 +95542,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.d4312ddd3212b162",
+      "id": "rust.gtk-preset.64f746076fbf0444",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "Pi-hole State (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / Pi-hole State, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.dns.pihole_active",
+      "syntaxTemplate": "conky-status get data.dns.pihole_onoff --default ?",
       "examples": [
-        "conky-status get data.dns.pihole_active"
+        "conky-status get data.dns.pihole_onoff --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.dns.pihole_active"
+        "data.dns.pihole_onoff",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -95897,34 +95669,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.3bc067b19f88385d",
+      "id": "rust.gtk-preset.816590f59caf9440",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "Security Score (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / Security Score, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.health.score_display",
+      "syntaxTemplate": "conky-status get data.health.score_display --default ?",
       "examples": [
-        "conky-status get data.health.score_display"
+        "conky-status get data.health.score_display --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.health.score_display"
+        "data.health.score_display",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -96034,34 +95796,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.379692cdaf467f61",
+      "id": "rust.gtk-preset.aeeb58d42c29de20",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "Sign-In Status (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / Sign-In Status, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.auth.authenticated_human",
+      "syntaxTemplate": "conky-status get data.auth.authenticated_human --default ?",
       "examples": [
-        "conky-status get data.auth.authenticated_human"
+        "conky-status get data.auth.authenticated_human --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.auth.authenticated_human"
+        "data.auth.authenticated_human",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -96171,34 +95923,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.4bfb6d6fe7060b0c",
+      "id": "rust.gtk-preset.2803ddb57a51ef0f",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "Tor Exit (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / Tor Exit, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.ip.tor.ip",
+      "syntaxTemplate": "conky-status get data.ip.tor.ip_display --default ?",
       "examples": [
-        "conky-status get data.ip.tor.ip"
+        "conky-status get data.ip.tor.ip_display --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.ip.tor.ip"
+        "data.ip.tor.ip_display",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -96368,34 +96110,24 @@
       "exclusionReason": null
     },
     {
-      "id": "rust.gtk-preset.66ed04c4204d121d",
+      "id": "rust.gtk-preset.eebb3f07de8188c7",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / torrify",
       "operation": "get",
       "label": "Torrify State (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / Torrify State, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.ip.effective_source",
+      "syntaxTemplate": "conky-status get data.tor.torrified_onoff --default ?",
       "examples": [
-        "conky-status get data.ip.effective_source"
+        "conky-status get data.tor.torrified_onoff --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.ip.effective_source"
+        "data.tor.torrified_onoff",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -96505,34 +96237,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.ac8393b627d65185",
+      "id": "rust.gtk-preset.2d9494ef2d421192",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "VPN State (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / VPN State, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.routing.connected",
+      "syntaxTemplate": "conky-status get data.routing.onoff --default ?",
       "examples": [
-        "conky-status get data.routing.connected"
+        "conky-status get data.routing.onoff --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.routing.connected"
+        "data.routing.onoff",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",
@@ -96642,34 +96364,24 @@
       "contentOverrideReason": "Fixed GTK argv and the stronger of GTK and canonical safety are embedded in an independently executable ColonyOps Rust preset."
     },
     {
-      "id": "rust.gtk-preset.3c5eeb8fd7217593",
+      "id": "rust.gtk-preset.1cbffef2489aa789",
       "origin": "cairo-gtk-control-parity",
       "binary": "conky-status",
       "category": "GTK Controls / status",
       "operation": "get",
       "label": "Version Info (conky-status)",
       "purpose": "Run the exact direct Rust operation behind Session Status / Version Info, without a GTK, shell, or dock-action proxy.",
-      "syntaxTemplate": "conky-status get data.system.os.local_version",
+      "syntaxTemplate": "conky-status get data.system.os.local_version --default ?",
       "examples": [
-        "conky-status get data.system.os.local_version"
+        "conky-status get data.system.os.local_version --default ?"
       ],
       "argvTemplate": [
         "get",
-        "data.system.os.local_version"
+        "data.system.os.local_version",
+        "--default",
+        "?"
       ],
       "parameters": [
-        {
-          "name": "value",
-          "type": "text",
-          "required": false,
-          "flag": "--default",
-          "syntax": "--default <value>",
-          "description": "Value to print when the key is missing or the lookup fails. Without it a missing key prints nothing, and a missing user.<name> command exits 4",
-          "default": null,
-          "sensitive": false,
-          "repeatable": false,
-          "positional": false
-        },
         {
           "name": "refresh",
           "type": "boolean",

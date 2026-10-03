@@ -91,6 +91,17 @@ for step in ("data", "data"):
 
 UNKNOWN = "unknown"
 
+# The tokens the snapshot's producers publish when they could NOT read a value: "-" is the
+# Tor exit when no Tor SOCKS port listens OR when the ip-fetch tor call failed, "Offline" is
+# an address whose fetch failed, "?" and "N/A" come from other adapters. None of them is a
+# reading, so none may be compared, equated or shown as a fact (inspector passes 4 and 5, one
+# set for every reader here).
+NO_READING = {"", UNKNOWN, "-", "?", "N/A", "Offline", "not checked"}
+
+
+def is_read(value):
+    return str(value).strip() not in NO_READING
+
 
 def dig(*path, default=UNKNOWN):
     """Walk a key path. A missing or empty leaf reads as unknown, never as blank,
@@ -184,7 +195,41 @@ def fresher(live_value, cached_value):
     return live_value if live_value else cached_value
 
 
+# Booleans whose producer publishes `false` (or keeps a stale value) when the read failed,
+# with a companion flag saying whether it was read at all. A field listed here is Unknown
+# unless its flag reads Yes: a degraded health read publishes firewall false and
+# ipv6_disabled false under *_known false, and those must never print "Off" (inspector
+# pass 6). One table, so every reader of these fields gets the same answer.
+KNOWN_FLAG = {
+    ("health", "firewall"): "firewall_known",
+    ("health", "ipv6_disabled"): "ipv6_disabled_known",
+    ("routing", "connected"): "connected_known",
+    # dnscrypt_active can be null under dnscrypt_known true (one field missing from a read),
+    # so it has its own flag; a conky-status built before that flag existed lacks it, and
+    # the section flag answers instead (first flag the section publishes wins).
+    ("dns", "dnscrypt_active"): ("dnscrypt_active_known", "dnscrypt_known"),
+    ("dns", "dnscrypt_service_up"): "dnscrypt_known",
+    ("dns", "configured_as_resolver"): "dnscrypt_known",
+}
+
+
+def known_flag_for(path):
+    """The companion flag that governs `path`, or None. A tuple lists candidates in order of
+    preference; the first one the section actually publishes is used."""
+    spec = KNOWN_FLAG.get(tuple(path))
+    if spec is None or isinstance(spec, str):
+        return spec
+    section = root.get(path[0], {}) if isinstance(root, dict) else {}
+    for candidate in spec:
+        if isinstance(section, dict) and candidate in section:
+            return candidate
+    return spec[-1]
+
+
 def onoff(*path):
+    flag = known_flag_for(path)
+    if flag is not None and dig(path[0], flag) != "Yes":
+        return UNKNOWN
     value = dig(*path)
     if value in ("True", "true", "Yes"):
         return "On"
@@ -194,7 +239,7 @@ def onoff(*path):
 
 
 def joined(*parts):
-    kept = [p for p in parts if p and p != UNKNOWN]
+    kept = [p for p in parts if is_read(p)]
     return ", ".join(kept) if kept else UNKNOWN
 
 
@@ -246,9 +291,20 @@ def snapshot_age():
 
 
 def public_ip():
-    return joined(dig("ip", "public"),
-                  dig("online_info", "online_status", "country_flag", default=""),
-                  dig("online_info", "online_status", "country", default=""))
+    """The public address, never a failed-fetch token shown as one, and online_info's
+    country only when online_info itself says its reading is current (inspector pass 5)."""
+    ip = dig("ip", "public")
+    if not is_read(ip):
+        return UNKNOWN
+    # online_info's location belongs to online_info's OWN address, which is often the
+    # pre-VPN ISP address (collector/mod.rs); it describes this address only when the two
+    # are the same. Otherwise the ip section's country, from the same record as the address.
+    if (dig("online_info", "status", default="") == "ok"
+            and dig("online_info", "online_status", "ip", default="") == ip):
+        return joined(ip,
+                      dig("online_info", "online_status", "country_flag", default=""),
+                      dig("online_info", "online_status", "country", default=""))
+    return joined(ip, dig("ip", "country", default=""))
 
 
 def login_word():
@@ -285,7 +341,7 @@ def login_word():
 
 def tor_line():
     ip = dig("ip", "tor", "ip", default="")
-    if ip and ip != UNKNOWN:
+    if is_read(ip):
         return joined(ip,
                       dig("ip", "tor", "flag", default=""),
                       joined(dig("ip", "tor", "city", default=""),
@@ -295,16 +351,28 @@ def tor_line():
 
 def torrify_line():
     """Whether SYSTEM traffic leaves through Tor, which is not the same question
-    as whether the Tor daemon is up. The snapshot answers it by comparing the
-    effective egress source against the Tor exit."""
-    source = dig("ip", "effective_source", default="")
-    effective = dig("ip", "effective", "ip", default="")
+    as whether the Tor daemon is up.
+
+    The firewall reading answers it: `tor.torrified` under `tor.torrified_known`
+    is what genmon and the dashboard use, and only it can say Off. When the
+    firewall could not be read, the addresses can CONFIRM Tor (the measured
+    egress is the measured Tor exit) but can never prove it is off: exits differ
+    under multi-instance Tor, and "-" is also what a failed Tor read publishes.
+    So an unread firewall is On on matching real readings and unknown otherwise
+    (inspector passes 3, 4 and 5)."""
     tor_ip = dig("ip", "tor", "ip", default="")
-    if source == "tor" or (effective != UNKNOWN and effective == tor_ip):
+    if dig("tor", "torrified_known") == "Yes":
+        torrified = dig("tor", "torrified")
+        if torrified == "Yes":
+            return "On, system traffic exits via Tor"
+        if torrified == "No":
+            if is_read(tor_ip):
+                return "Off, Tor is reachable but system traffic is not routed through it"
+            return "Off"
+    effective = dig("ip", "effective", "ip", default="")
+    if is_read(effective) and is_read(tor_ip) and effective == tor_ip:
         return "On, system traffic exits via Tor"
-    if tor_ip and tor_ip != UNKNOWN:
-        return "Off, Tor is reachable but system traffic is not routed through it"
-    return "Off"
+    return UNKNOWN
 
 
 FIREWALL_UNITS = {
@@ -552,7 +620,7 @@ def state_of(value, invert=False):
     """ok when the value means "protected", warn when it means "not protected".
     `invert` is for the fields where Yes is the bad answer (Blocked)."""
     text = str(value).strip()
-    if text in ("", UNKNOWN, "unknown", "not checked", "-"):
+    if text in NO_READING:
         return "warn"
     if text in PROTECTIVE_ON:
         return "bad" if invert else "ok"

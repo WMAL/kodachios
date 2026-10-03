@@ -1,0 +1,25 @@
+# kodachi-conky-privileged.timer
+# SPDX-License-Identifier: LicenseRef-Kodachi-SAN-1.1
+# Copyright (c) 2013-2026 Warith Al Maawali
+#
+# Round 3b (2026-10-01): fires every 10 s, and each run of
+# kodachi-conky-privileged.service collects only the reads that are DUE
+# (conky-status privileged.rs read_is_due): the conky HUD's reads every 90 s, the
+# cadence of the user-side conky-snapshot-refresh.timer, so the bundle the user refresh
+# reads is at most ~115 s old (the reader accepts 150 s); the dashboard's status reads at
+# their own 10 to 60 s TTL while a dashboard window is visible; and every read taken
+# before the last Kodachi state change at once. A run with nothing due exits without
+# writing. AccuracySec=1s because the default (1 min) would coalesce the 10 s cadence.
+# See the service file for why.
+
+[Unit]
+Description=Run the Kodachi conky privileged status reads that are due, every 10 seconds
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=10s
+AccuracySec=1s
+Unit=kodachi-conky-privileged.service
+
+[Install]
+WantedBy=timers.target

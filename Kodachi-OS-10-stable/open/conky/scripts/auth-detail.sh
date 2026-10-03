@@ -22,6 +22,12 @@
 # Uses the conky-status gateway where applicable.
 
 set -u
+# F19: answer from the snapshot-generation memo when nothing this script reads has
+# changed (conky-snapshot-memo.sh explains why the output is identical). Any doubt
+# falls through to the unchanged body below.
+if [[ -z "${CONKY_MEMO_INNER:-}" && -r "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" ]]; then
+    . "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" && conky_memo_run "${BASH_SOURCE[0]}" "$@"
+fi
 FIELD="${1:-authenticated}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -60,6 +66,15 @@ case "$FIELD" in
         ;;
     authenticated|blocked|sessionid|secureid)
         conky_gateway_get_or_default "auth-detail.$FIELD" "N/A" 2 "$BIN"
+        ;;
+    # The Blocked row's coloured token: a read without is_blocked is "?", never the
+    # green "Off" the two-way if_match drew for it (inspector pass 7).
+    blocked-conky)
+        case "$(conky_gateway_get_or_default "auth-detail.blocked" "?" 2 "$BIN")" in
+            On) printf '%s\n' '${color6}On' ;;
+            Off) printf '%s\n' '${color1}Off' ;;
+            *) printf '%s\n' '${color3}?' ;;
+        esac
         ;;
     *)
         echo "N/A"

@@ -137,8 +137,8 @@ AUTOSHIELD_EXIT_ON_SIGNAL="$DIRECT_EXECUTION"
 # Source: main-info.json (terminal section)
 # DO NOT EDIT MANUALLY - Run pack-kodachi.sh to update these values
 BUILD_VERSION="<lab-host>"  # From: terminal.main_version
-BUILD_NUM="29"          # From: terminal.build_number (auto-incremented)
-BUILD_DATE="2026-09-28"  # From: terminal.last_build_date
+BUILD_NUM="34"          # From: terminal.build_number (auto-incremented)
+BUILD_DATE="2026-10-03"  # From: terminal.last_build_date
 SCRIPT_VERSION="${BUILD_VERSION}.${BUILD_NUM}"
 
 # Color codes for compact display (optimized for black terminal)
@@ -1007,10 +1007,16 @@ authenticate() {
     if [ "$IS_LOGGED_IN" = "true" ]; then
         AUTH_STATUS="${GREEN}[Auth:+]${NC}"
         return 0
-    else
+    elif [ "$IS_LOGGED_IN" = "false" ]; then
         # Failed - print error immediately
         echo -e "${RED}- Authentication FAILED - Not logged in${NC}"
         AUTH_STATUS="${RED}[Auth:-]${NC}"
+        return 1
+    else
+        # Inspector pass 7: online-auth did not answer the re-check, so the login state is
+        # unknown, not "Not logged in". Still return 1: the login was not confirmed.
+        echo -e "${YELLOW}? Authentication state unknown - online-auth did not answer${NC}"
+        AUTH_STATUS="${YELLOW}[Auth:?]${NC}"
         return 1
     fi
 }
@@ -1074,7 +1080,7 @@ setup_dnscrypt() {
 
         # Handle empty nameservers
         if [ -z "$NAMESERVERS" ]; then
-            echo -e "${RED}  - Failed to detect DNS servers${NC}"
+            echo -e "${YELLOW}  ? DNS servers not detected (dns-switch did not answer), retrying${NC}"
             ACTUAL_DNS_MODE="Unknown"
             DNS_STATUS_MSG="${RED}[SDNS:-]${NC}"
             # Don't return yet - will retry
@@ -1298,6 +1304,15 @@ setup_dnscrypt() {
         fi
     done
 
+    # Inspector pass 7: when the LAST attempt could not READ the DNS state (no nameservers
+    # from dns-switch status, or no service_active boolean from dns-switch dnscrypt), the
+    # outcome is unknown, which is not the same as the configuration having failed.
+    if [ -z "${NAMESERVERS:-}" ] || { [ "${SERVICE_ACTIVE:-}" != "true" ] && [ "${SERVICE_ACTIVE:-}" != "false" ]; }; then
+        echo -e "${YELLOW}? DNSCrypt state could not be read after $max_retries attempts (dns-switch did not answer)${NC}"
+        ACTUAL_DNS_MODE="Unknown (dns-switch did not answer)"
+        DNS_STATUS_MSG="${YELLOW}[SDNS:?]${NC}"
+        return 1
+    fi
     # All retries exhausted - DNSCrypt configuration failed
     echo -e "${RED}- DNSCrypt configuration failed after $max_retries attempts${NC}"
     ACTUAL_DNS_MODE="Unknown"
@@ -1312,6 +1327,8 @@ setup_dnscrypt_locked() {
 print_dns_setup_result() {
     if [[ "$DNS_STATUS_MSG" == *"SDNS:+"* ]] || [[ "$DNS_STATUS_MSG" == *"SDNS:Tor:++"* ]]; then
         echo -e " ${GREEN}+ DNSCrypt configured${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+    elif [[ "$DNS_STATUS_MSG" == *"SDNS:?"* ]]; then
+        echo -e " ${YELLOW}? DNSCrypt state unknown (dns-switch did not answer)${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
     elif [[ "$DNS_STATUS_MSG" == *"SDNS:Stopped"* ]]; then
         echo -e " ${YELLOW}! DNSCrypt not started${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
     elif [[ "$DNS_STATUS_MSG" == *"SDNS:Direct"* ]]; then
@@ -1349,6 +1366,37 @@ verify_tor_dns_firewall() {
         ACTIVE_FIREWALL=$(parse_json "$FIREWALL_JSON" ".data.active_firewall" || echo "none")
         TOR_DNS_IPTABLES=$(parse_json "$FIREWALL_JSON" ".data.tor_dns_iptables" || echo "false")
         TOR_DNS_NFTABLES=$(parse_json "$FIREWALL_JSON" ".data.tor_dns_nftables" || echo "false")
+        # Inspector pass 7 (#7): parse_json without jq reads only top-level strings and
+        # numbers, so both booleans above came back empty and RULESET_READABLE below
+        # stayed "true", which turned every no-jq answer into "inactive". Read the two
+        # booleans directly; a flag that is not a real boolean stays empty.
+        TOR_DNS_IPTABLES=$(printf '%s' "$FIREWALL_JSON" | grep -Eo '"tor_dns_iptables"[[:space:]]*:[[:space:]]*(true|false)' | grep -Eo '(true|false)$' | head -1)
+        TOR_DNS_NFTABLES=$(printf '%s' "$FIREWALL_JSON" | grep -Eo '"tor_dns_nftables"[[:space:]]*:[[:space:]]*(true|false)' | grep -Eo '(true|false)$' | head -1)
+        _fw_active=$(printf '%s' "$FIREWALL_JSON" | grep -Eo '"active_firewall"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
+        [ -n "$_fw_active" ] && ACTIVE_FIREWALL="$_fw_active"
+    fi
+
+    # C4 (2026-09-30): tor-switch F7 answers a caller that cannot read the
+    # firewall with null flags and ruleset_readable false, and the `// false`
+    # defaults above turn that into "inactive". An empty answer is the same
+    # failed read. Keep both UNKNOWN unless the independent check below can
+    # read the ruleset itself.
+    local RULESET_READABLE="true"
+    if [ -z "$FIREWALL_JSON" ]; then
+        RULESET_READABLE="false"
+    elif check_jq; then
+        # An unparseable answer or a missing Tor DNS flag is a failed read too
+        # (inspector pass 6): only a parsed answer that carries both flags as booleans
+        # is readable, and anything but "true" from jq means unreadable.
+        RULESET_READABLE=$(echo "$FIREWALL_JSON" | jq -r 'if (.data.ruleset_readable == false) or ((.data.tor_dns_iptables | type) != "boolean") or ((.data.tor_dns_nftables | type) != "boolean") then "false" else "true" end' 2>/dev/null)
+        [ "$RULESET_READABLE" = "true" ] || RULESET_READABLE="false"
+    elif echo "$FIREWALL_JSON" | grep -q '"ruleset_readable"[[:space:]]*:[[:space:]]*false'; then
+        RULESET_READABLE="false"
+    elif ! printf '%s' "$FIREWALL_JSON" | grep -Eq '"tor_dns_iptables"[[:space:]]*:[[:space:]]*(true|false)' \
+        || ! printf '%s' "$FIREWALL_JSON" | grep -Eq '"tor_dns_nftables"[[:space:]]*:[[:space:]]*(true|false)'; then
+        # Inspector pass 7 (#7): without jq the answer is readable only when BOTH Tor DNS
+        # flags are real booleans, the same rule the jq branch applies.
+        RULESET_READABLE="false"
     fi
 
     # Record service-reported state
@@ -1409,6 +1457,11 @@ verify_tor_dns_firewall() {
     fi
 
     TOR_DNS_FIREWALL_VERIFIED="false"
+    if [ "$RULESET_READABLE" = "false" ]; then
+        # Nothing could read the firewall: unknown, not inactive (C4).
+        TOR_DNS_FIREWALL_STATUS="unknown"
+        return 1
+    fi
     TOR_DNS_FIREWALL_STATUS="inactive"
     return 1
 }
@@ -1576,6 +1629,9 @@ check_permission_guard() {
 
     if [ "$STATUS" = "ok" ]; then
         PERM_GUARD_STATUS="${GREEN}[PermG:+]${NC}"
+    elif [ -z "$STATUS" ] || [ "$STATUS" = "null" ]; then
+        # Inspector pass 7: permission-guard did not answer; unknown, not stopped.
+        PERM_GUARD_STATUS="${YELLOW}[PermG:?]${NC}"
     else
         PERM_GUARD_STATUS="${RED}[PermG:-]${NC}"
     fi
@@ -1749,20 +1805,42 @@ fetch_system_info() {
         CITY=$(parse_json "$IP_JSON" ".data.records[0].city" || echo "N/A")
         FLAG=$(parse_json "$IP_JSON" ".data.records[0].flag" || echo "")
         end_timer
-        echo -e " ${GREEN}+ IP location retrieved${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+        if [ -z "$IP_ADDR" ] || [ "$IP_ADDR" = "N/A" ] || [ "$IP_ADDR" = "null" ]; then
+            # Inspector pass 7: ip-fetch did not answer; say so instead of "retrieved".
+            echo -e " ${YELLOW}? IP location unknown (ip-fetch did not answer)${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+        else
+            echo -e " ${GREEN}+ IP location retrieved${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+        fi
 
         # Fetch Tor status with dynamic color (60s timeout)
         echo -ne "${YELLOW}▸ Checking Tor connection...${NC}"
         start_timer
         TOR_CHECK=$(run_command ip-fetch 60 check-tor --json 2>/dev/null)
-        IS_TOR=$(parse_json "$TOR_CHECK" ".IsTor" || echo "false")
+        IS_TOR=$(parse_json "$TOR_CHECK" ".IsTor" || echo "")
+        # Inspector 2026-09-30 (C4 class): ip-fetch's contract (lib.rs is_conclusive)
+        # is an allowlist, only High or Authoritative confidence is a definitive
+        # answer. An inconclusive, low-confidence or missing answer is Unknown, not a
+        # red "Direct".
+        TOR_CONFIDENCE=$(parse_json "$TOR_CHECK" ".confidence" || echo "")
+        case "$TOR_CONFIDENCE" in
+            High|Authoritative) ;;
+            *) IS_TOR="unknown" ;;
+        esac
         if [ "$IS_TOR" = "true" ]; then
             TOR_STATUS="${GREEN}+ Tor${NC}"       # Bright green when using Tor
-        else
+        elif [ "$IS_TOR" = "false" ]; then
             TOR_STATUS="${RED}- Direct${NC}"      # Red when NOT using Tor
+        else
+            TOR_STATUS="${YELLOW}? Unknown${NC}"  # Tor check inconclusive or unanswered
         fi
         end_timer
-        echo -e " ${GREEN}+ Tor status confirmed${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+        # An inconclusive check was not confirmed, so the progress line must not say so.
+        case "$IS_TOR" in
+            true|false)
+                echo -e " ${GREEN}+ Tor status confirmed${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}" ;;
+            *)
+                echo -e " ${YELLOW}? Tor status inconclusive${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}" ;;
+        esac
 
         # Fetch network connection status (50s timeout)
         # Bright green for VPN, RED for no VPN
@@ -1770,6 +1848,13 @@ fetch_system_info() {
         start_timer
         ROUTING_JSON=$(run_command routing-switch 50 status --json 2>/dev/null)
         CONNECTED=$(parse_json "$ROUTING_JSON" ".data.connected" || echo "false")
+        # Inspector pass 7 (#1): an empty, unparseable or {"status":"error"} answer is a
+        # read that did not happen, so the VPN state is unknown, never a red "No VPN".
+        # Only a real true/false from a non-error answer decides.
+        VPN_READ_STATUS=$(parse_json "$ROUTING_JSON" ".status" || echo "")
+        if [ "$VPN_READ_STATUS" = "error" ] || { [ "$CONNECTED" != "true" ] && [ "$CONNECTED" != "false" ]; }; then
+            CONNECTED="unknown"
+        fi
         PROTOCOL=$(parse_json "$ROUTING_JSON" ".data.protocol" || echo "none")
         # 2026-05-24: routing-switch status now also carries provider_name
         # (Mullvad / IVPN / NordVPN / etc.) and connection_source
@@ -1786,11 +1871,17 @@ fetch_system_info() {
             else
                 NET_STATUS="${GREEN}${PROTOCOL}${NC}"  # Bright green for VPN
             fi
-        else
+        elif [ "$CONNECTED" = "false" ]; then
             NET_STATUS="${RED}No VPN${NC}"
+        else
+            NET_STATUS="${YELLOW}? VPN unknown${NC}"  # routing-switch did not answer
         fi
         end_timer
-        echo -e " ${GREEN}+ VPN status retrieved${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+        if [ "$CONNECTED" = "unknown" ]; then
+            echo -e " ${YELLOW}? VPN status unknown (routing-switch did not answer)${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+        else
+            echo -e " ${GREEN}+ VPN status retrieved${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+        fi
 
         # Check Kodachi Network status (5s timeout - quick check)
         echo -ne "${YELLOW}▸ Checking Kodachi Network...${NC}"
@@ -1802,14 +1893,23 @@ fetch_system_info() {
             curl_cert_args=(--cacert "/etc/kodachi/kodachi-cert-bundle.pem")
         fi
         KNET_JSON=$(curl -s --max-time 5 "${curl_cert_args[@]}" "https://kodachi.cloud/apps/ip-extract.php" 2>/dev/null)
-        IS_KODACHI=$(parse_json "$KNET_JSON" ".is_kodachi" || echo "false")
+        IS_KODACHI=$(parse_json "$KNET_JSON" ".is_kodachi" || echo "")
+        # Only a real answer is + or -: no answer (curl failed, no JSON, no
+        # is_kodachi) is [KNet:?], never a red "not on KNet" (inspector pass 6).
         if [ "$IS_KODACHI" = "true" ]; then
             KNET_STATUS="${GREEN}[KNet:+]${NC}"
-        else
+        elif [ "$IS_KODACHI" = "false" ]; then
             KNET_STATUS="${RED}[KNet:-]${NC}"
+        else
+            KNET_STATUS="${YELLOW}[KNet:?]${NC}"
         fi
         end_timer
-        echo -e " ${GREEN}+ KNet status checked${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+        case "$IS_KODACHI" in
+            true|false)
+                echo -e " ${GREEN}+ KNet status checked${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}" ;;
+            *)
+                echo -e " ${YELLOW}? KNet check did not answer${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}" ;;
+        esac
     else
         # Offline mode - set placeholders
         echo -e "${YELLOW}⊘ Skipping IP geolocation (offline mode)${NC}"
@@ -1839,9 +1939,38 @@ fetch_system_info() {
         HARDENED="?"
         TOTAL="?"
     fi
-    HARDENING_STATUS="${HARDENED}/${TOTAL} Modules"
+    # Inspector pass 8 (#3), corrected in pass 9: an empty answer gave "/ Modules" and a
+    # missing .data.modules gave "?/0 Modules", both in green after "+ Hardening
+    # verified". health-control security-verify publishes .data.modules as an OBJECT
+    # keyed by module name, each value carrying hardening_status "hardened" or
+    # "not_hardened" (security_hardening.rs), so a non-empty object (or a non-empty
+    # array, an older shape) with numeric counts is a reading; anything else, an empty
+    # {} included, is unknown. Pass 8 accepted only an array and so turned every real
+    # answer into "?".
+    HARDENING_KNOWN=false
+    if check_jq && [ "$(echo "$HARDENING_JSON" | jq -r '(.data.modules | type) as $t | (($t == "object") or ($t == "array")) and ((.data.modules | length) > 0)' 2>/dev/null)" = "true" ] \
+        && [[ "$HARDENED" =~ ^[0-9]+$ ]] && [[ "$TOTAL" =~ ^[0-9]+$ ]]; then
+        HARDENING_KNOWN=true
+    fi
     end_timer
-    echo -e " ${GREEN}+ Hardening verified${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+    if [ "$HARDENING_KNOWN" = "true" ]; then
+        HARDENING_STATUS="${HARDENED}/${TOTAL} Modules"
+        # Colour by how many modules are hardened (inspector pass 10): a read "0/7" is a
+        # real negative and was drawn green like "7/7".
+        if [ "$HARDENED" -ge "$TOTAL" ]; then
+            HARDENING_COLOR="${GREEN}"
+        elif [ "$HARDENED" -gt 0 ]; then
+            HARDENING_COLOR="${YELLOW}"
+        else
+            HARDENING_COLOR="${RED}"
+        fi
+        echo -e " ${GREEN}+ Hardening verified${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+    else
+        HARDENING_STATUS="?"
+        HARDENING_COLOR="${YELLOW}"
+        echo -e " ${YELLOW}? Hardening state unknown${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+    fi
+    # end of hardening read (inspector pass 8)
 
     # Fetch security score (50s timeout)
     echo -ne "${YELLOW}▸ Calculating security score...${NC}"
@@ -1861,7 +1990,19 @@ fetch_system_info() {
     fi
     SEC_STATUS=$(parse_json "$SCORE_JSON" ".data.security_level" || echo "UNKNOWN")
     end_timer
-    echo -e " ${GREEN}+ Score calculated${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+    # Inspector pass 8 (#2): a failed or unparseable score read printed a critical red
+    # "null/100 [null]" or "/100 []" after "+ Score calculated". Only a number is a score.
+    if [[ "$SEC_SCORE" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+        if [ -z "$SEC_STATUS" ] || [ "$SEC_STATUS" = "null" ]; then
+            SEC_STATUS="UNKNOWN"
+        fi
+        echo -e " ${GREEN}+ Score calculated${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+    else
+        SEC_SCORE="?"
+        SEC_STATUS="status unknown"
+        echo -e " ${YELLOW}? Security score unknown (health-control did not answer)${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+    fi
+    # end of security score read (inspector pass 8)
 
     # Fetch hostname, timezone, and MAC (30s timeout - local calls)
     echo -ne "${YELLOW}▸ Reading system configuration...${NC}"
@@ -1875,18 +2016,44 @@ fetch_system_info() {
     MAC_JSON=$(run_command health-control 30 mac-show-macs --json 2>/dev/null)
     MAC_ADDR=$(parse_json "$MAC_JSON" ".data.interfaces[0].mac_address" || echo "N/A")
     end_timer
-    echo -e " ${GREEN}+ Configuration loaded${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+    # Inspector pass 8 (#4): an empty, "null" or "N/A" read printed blank or "null" in
+    # green after "+ Configuration loaded". Each unread field is a yellow "?", like
+    # IP_ADDR, and the progress line says when something did not answer.
+    CONFIG_UNKNOWN=0
+    if [ -z "$HOSTNAME" ] || [ "$HOSTNAME" = "null" ] || [ "$HOSTNAME" = "N/A" ]; then HOSTNAME="${YELLOW}?${NC}"; CONFIG_UNKNOWN=$((CONFIG_UNKNOWN + 1)); fi
+    if [ -z "$TIMEZONE" ] || [ "$TIMEZONE" = "null" ] || [ "$TIMEZONE" = "N/A" ]; then TIMEZONE="${YELLOW}?${NC}"; CONFIG_UNKNOWN=$((CONFIG_UNKNOWN + 1)); fi
+    if [ -z "$MAC_ADDR" ] || [ "$MAC_ADDR" = "null" ] || [ "$MAC_ADDR" = "N/A" ]; then MAC_ADDR="${YELLOW}?${NC}"; CONFIG_UNKNOWN=$((CONFIG_UNKNOWN + 1)); fi
+    if [ "$CONFIG_UNKNOWN" -eq 0 ]; then
+        echo -e " ${GREEN}+ Configuration loaded${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+    elif [ "$CONFIG_UNKNOWN" -eq 3 ]; then
+        echo -e " ${YELLOW}? Configuration unknown (health-control did not answer)${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+    else
+        echo -e " ${YELLOW}? Configuration partly unknown ($CONFIG_UNKNOWN of 3 fields, health-control did not answer)${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+    fi
+    # end of configuration read (inspector pass 8)
 
     # Store status. Three states, never one unconditional green: offline is reported as
-    # offline with the same marker the auth and DNS pills use, a failed lookup while online
-    # is red, and green means an address was actually retrieved.
+    # offline with the same marker the auth and DNS pills use, a lookup that did not answer
+    # while online is a yellow [Net:?], and green means an address was actually retrieved.
     if [ "$HAS_INTERNET" != "true" ]; then
         INFO_STATUS="${YELLOW}[Net:⊘]${NC}"
     elif [ -z "$IP_ADDR" ] || [ "$IP_ADDR" = "N/A" ] || [ "$IP_ADDR" = "null" ]; then
-        INFO_STATUS="${RED}[Net:-]${NC}"
+        # Inspector pass 7: online but ip-fetch did not answer. That is an unread address,
+        # not a network failure, so it is a yellow "?", and the summary row says "?"
+        # instead of printing an empty or "null" address in green.
+        INFO_STATUS="${YELLOW}[Net:?]${NC}"
+        IP_ADDR="${YELLOW}?${NC}"
+        if [ -z "$COUNTRY" ] || [ "$COUNTRY" = "null" ] || [ "$COUNTRY" = "N/A" ]; then COUNTRY="${YELLOW}?${NC}"; fi
+        if [ -z "$CITY" ] || [ "$CITY" = "null" ] || [ "$CITY" = "N/A" ]; then CITY="${YELLOW}?${NC}"; fi
     else
         INFO_STATUS="${GREEN}[Net:+]${NC}"
+        # Inspector pass 9 (#4): the address was read, but ip-fetch leaves city (and can
+        # leave country) as "" when the geolocation lacks it. Blank in green is not a
+        # place; an unread field is a yellow "?", the same rule as the arm above.
+        if [ -z "$COUNTRY" ] || [ "$COUNTRY" = "null" ] || [ "$COUNTRY" = "N/A" ]; then COUNTRY="${YELLOW}?${NC}"; fi
+        if [ -z "$CITY" ] || [ "$CITY" = "null" ] || [ "$CITY" = "N/A" ]; then CITY="${YELLOW}?${NC}"; fi
     fi
+    # end of Net status (inspector pass 9)
 }
 
 # Function to detect boot mode (UEFI or Legacy BIOS)
@@ -2026,8 +2193,11 @@ display_info() {
             SCORE_COLOR="${RED}"      # Red (critical)
         fi
     else
-        SCORE_COLOR="${RED}"
+        # Inspector pass 8 (#2): a score that could not be read is "?", unknown, not
+        # critical.
+        SCORE_COLOR="${YELLOW}"  # unread score
     fi
+    # end of score colour (inspector pass 8)
 
     # Show ACTUAL DNS mode (verified, not hardcoded)
     # Truncate DNS mode if too long (allow space for [Direct:+ Port:+])
@@ -2036,6 +2206,10 @@ display_info() {
     # Color DNS based on status
     if [[ "$ACTUAL_DNS_MODE" == *"[Direct:+ Port:+]"* ]]; then
         DNS_COLOR="${GREEN}"  # Bright green for Tor DNS with both methods successful
+    elif [[ "$ACTUAL_DNS_MODE" == *"state unknown"* ]] || [[ "$ACTUAL_DNS_MODE" == Unknown* ]]; then
+        # Inspector pass 8 (#1): "127.0.0.1 (DNSCrypt state unknown)" (pass 7 #8) matched the
+        # *"DNSCrypt"* arm below and drew GREEN. An unread DNS state is yellow.
+        DNS_COLOR="${YELLOW}"
     elif [[ "$ACTUAL_DNS_MODE" == *"DNSCrypt stopped"* ]]; then
         DNS_COLOR="${RED}"  # Red for DNSCrypt stopped (broken DNS)
     elif [[ "$ACTUAL_DNS_MODE" == *"DNSCrypt"* ]]; then
@@ -2045,9 +2219,10 @@ display_info() {
     else
         DNS_COLOR="${YELLOW}"  # Yellow for direct DNS or anything else
     fi
+    # end of DNS colour (inspector pass 8)
 
     # Line 1: Security Score | Hardening | Torrified Status
-    echo -e "${BOLD}Security:${NC} ${SCORE_COLOR}${SEC_SCORE}/100 [${SEC_STATUS}]${NC} | ${BOLD}Hardening:${NC} ${GREEN}${HARDENING_STATUS}${NC} | ${BOLD}Torrified:${NC} ${TOR_STATUS}"
+    echo -e "${BOLD}Security:${NC} ${SCORE_COLOR}${SEC_SCORE}/100 [${SEC_STATUS}]${NC} | ${BOLD}Hardening:${NC} ${HARDENING_COLOR:-${GREEN}}${HARDENING_STATUS}${NC} | ${BOLD}Torrified:${NC} ${TOR_STATUS}"
 
     # Line 2: Network Connection | DNS
     echo -e "${BOLD}Network:${NC} ${NET_STATUS} | ${BOLD}DNS:${NC} ${DNS_COLOR}${DNS_DISPLAY}${NC} | ${KNET_STATUS}"
@@ -2853,10 +3028,16 @@ main() {
                 print_dns_setup_result
             else
                 end_timer
-                echo -e " ${RED}! DNSCrypt setup failed${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+                # Inspector pass 7: print_dns_setup_result tells an unread state ([SDNS:?])
+                # from a failure; for a failure it prints the same red line as before.
+                print_dns_setup_result
             fi
         else
-            echo -e " ${YELLOW}! Not authenticated${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+            if [ "$IS_LOGGED_IN" = "false" ]; then
+                echo -e " ${YELLOW}! Not authenticated${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+            else
+                echo -e " ${YELLOW}? Authentication state unknown (online-auth did not answer)${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+            fi
             echo -e "${YELLOW}  Attempting login...${NC}"
 
             # Attempt authentication immediately
@@ -2874,12 +3055,17 @@ main() {
                     print_dns_setup_result
                 else
                     end_timer
-                    echo -e " ${RED}! DNSCrypt setup failed${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+                    # Inspector pass 7: same as above, unknown is not "setup failed".
+                    print_dns_setup_result
                 fi
             else
                 end_timer
-                echo -e "${RED}! Authentication failed - using fallback DNS${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
-                AUTH_STATUS="${RED}[Auth:-]${NC}"
+                if [ "$AUTH_STATUS" = "${YELLOW}[Auth:?]${NC}" ]; then
+                    echo -e "${YELLOW}? Authentication state unknown - using fallback DNS${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+                else
+                    echo -e "${RED}! Authentication failed - using fallback DNS${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+                    AUTH_STATUS="${RED}[Auth:-]${NC}"
+                fi
 
                 # Not authenticated - use fallback DNS (no auth required)
                 run_command dns-switch 50 fallback >/dev/null 2>&1
@@ -2914,16 +3100,26 @@ main() {
 
             if [ "$DNSCRYPT_ACTIVE" = "true" ]; then
                 ACTUAL_DNS_MODE="127.0.0.1 (DNSCrypt)"
-            else
+            elif [ "$DNSCRYPT_ACTIVE" = "false" ]; then
                 # Could be Tor DNS - simplified check without full verification
                 ACTUAL_DNS_MODE="127.0.0.1 (Local)"
+            else
+                # Inspector pass 7 (#8): dns-switch did not answer (or answered without the
+                # flag), so the resolver behind 127.0.0.1 is not known; never "Local".
+                ACTUAL_DNS_MODE="127.0.0.1 (DNSCrypt state unknown)"
             fi
         else
             ACTUAL_DNS_MODE="$NAMESERVERS"
         fi
 
         end_timer
-        echo -e " ${GREEN}+ DNS detected${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+        if [ -z "$NAMESERVERS" ]; then
+            # Inspector pass 7: an empty dns-switch answer detected nothing.
+            ACTUAL_DNS_MODE="Unknown (dns-switch did not answer)"
+            echo -e " ${YELLOW}? DNS not detected (dns-switch did not answer)${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+        else
+            echo -e " ${GREEN}+ DNS detected${NC} ${CYAN}(took $(format_duration $OPERATION_TIME))${NC}"
+        fi
     fi
 
     # TIME SYNCHRONIZATION section

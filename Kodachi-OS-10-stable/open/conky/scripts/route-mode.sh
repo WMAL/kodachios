@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 set -u
+# F19: answer from the snapshot-generation memo when nothing this script reads has
+# changed (conky-snapshot-memo.sh explains why the output is identical). Any doubt
+# falls through to the unchanged body below.
+if [[ -z "${CONKY_MEMO_INNER:-}" && -r "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" ]]; then
+    . "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" && conky_memo_run "${BASH_SOURCE[0]}" "$@"
+fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/conky-gateway-common.sh" 2>/dev/null || true
@@ -25,11 +31,12 @@ bool_onoff() {
     *) printf 'Off' ;;
   esac
 }
-# ONE SNAPSHOT READ FOR ALL TWELVE KEYS, NOT TWELVE. Live-ISO gaps b21/b25, measured
+# ONE SNAPSHOT READ FOR ALL EIGHTEEN KEYS, NOT EIGHTEEN. Live-ISO gaps b21/b25, measured
 # 2026-09-04 on testvm-kodachi-0425b0 at load 0.5: `route-mode.sh mode` cost 112 forks and
 # 298 ms per run, the single most expensive directive in conkyrc-security.conf, and it runs
 # every 17 seconds (about 400 forks a minute on its own). Every one of those forks was the
-# per-key gateway path (stat + jq + subshells) repeated twelve times over the same file.
+# per-key gateway path (stat + jq + subshells) repeated once per key (twelve keys then,
+# eighteen since the `_known` companions) over the same file.
 # conky_gateway_get_many reads the snapshot once for all keys with identical TTL, alias and
 # absent-means-default semantics, and falls back to per-key reads whenever the batch cannot
 # be served. Defaults differ per key, so the batch uses one sentinel and the per-key default
@@ -43,31 +50,56 @@ ROUTE_KEYS=(
   data.routing.connected_known data.tor.torrified_known data.tor.tor_dns_known
   data.tor.running_known
 )
-# dnscrypt_known defaults to true so a snapshot from before the field existed
-# keeps the old On/Off rendering; conky-status publishes false (with null
-# booleans and dnscrypt_onoff "Unknown") when its DNSCrypt readback failed.
-# The four `_known` defaults are "true" for the same reason `dnscrypt_known` is: a
-# snapshot written before those fields existed must keep the old On/Off rendering
-# rather than turning every row unknown.
-ROUTE_DEFAULTS=(false None "" "" false Off false false false false N/A N/A true "" true true true true)
+# The five `_known` defaults are "false" (round 3c, R4, 2026-10-01). They used to be
+# "true" so a snapshot written before those fields existed kept the old On/Off rendering,
+# but a default is also what a key gets when the gateway MISSES ON PURPOSE (a snapshot
+# from before the last Kodachi state change, conky-gateway-common.sh) and
+# `conky-status get` cannot answer either: "true" then turned that unread state into a
+# known "Off" ("Torrify Off", "VPN Off", mode "Direct"). Every snapshot conky-status
+# writes carries these fields, so an absent one now means "not read": Unknown.
+# conky-status publishes dnscrypt_known false (with null booleans and dnscrypt_onoff
+# "Unknown") when its DNSCrypt readback failed.
+ROUTE_DEFAULTS=(false None "" "" false Off false false false false N/A N/A false "" false false false false)
 ROUTE_ABSENT="__CONKY_ROUTE_ABSENT__"
 route_vals=()
 if declare -F conky_gateway_get_many >/dev/null 2>&1; then
-  # The batch's own fallback forwards these, so a stale snapshot costs the same twelve
-  # per-key reads with the once-resolved $BIN that the old loop cost, not twelve resolutions.
+  # The batch's own fallback forwards these, so a stale snapshot costs the same eighteen
+  # per-key reads with the once-resolved $BIN that the old loop cost, not eighteen resolutions.
   mapfile -t route_vals < <(CONKY_GATEWAY_MANY_TIMEOUT=2 CONKY_GATEWAY_MANY_BIN="$BIN" conky_gateway_get_many "$ROUTE_ABSENT" "${ROUTE_KEYS[@]}" 2>/dev/null)
 fi
 if [[ "${#route_vals[@]}" -ne "${#ROUTE_KEYS[@]}" ]]; then
-  # Short or absent batch: read per key, exactly the old path.
+  # Short or absent batch: read per key, exactly the old path, with the same sentinel so
+  # an absent key is told apart from a read the same way on both paths.
   route_vals=()
   for _i in "${!ROUTE_KEYS[@]}"; do
-    route_vals+=("$(gv "${ROUTE_KEYS[$_i]}" "${ROUTE_DEFAULTS[$_i]}")")
-  done
-else
-  for _i in "${!ROUTE_KEYS[@]}"; do
-    [[ "${route_vals[$_i]}" == "$ROUTE_ABSENT" ]] && route_vals[$_i]="${ROUTE_DEFAULTS[$_i]}"
+    route_vals+=("$(gv "${ROUTE_KEYS[$_i]}" "$ROUTE_ABSENT")")
   done
 fi
+route_absent=()
+for _i in "${!ROUTE_KEYS[@]}"; do
+  if [[ "${route_vals[$_i]}" == "$ROUTE_ABSENT" ]]; then
+    route_absent[$_i]=1
+    route_vals[$_i]="${ROUTE_DEFAULTS[$_i]}"
+  fi
+done
+# Round 4 (V8, measured on <lab-host>, 2026-10-01): when the snapshot predates the
+# last state change, the gateway answers EACH key with its own `conky-status get`, so a
+# value and its `_known` companion are two reads seconds apart. During the collection that
+# follows a torrify the value's read timed out (absent, so its default `false`) while the
+# companion's read landed on the new snapshot (`true`), and the pair printed a known
+# "TORRIFY Off" 22 s after the torrify finished. An absent value is never a reading,
+# whatever its companion says.
+route_unread_if_absent() {
+  [[ -n "${route_absent[$1]:-}" ]] && route_vals[$2]=false
+  return 0
+}
+route_unread_if_absent 0 14   # data.routing.connected -> connected_known
+route_unread_if_absent 4 15   # data.tor.torrified -> torrified_known
+route_unread_if_absent 6 16   # data.tor.tor_dns -> tor_dns_known
+route_unread_if_absent 5 17   # data.tor.onoff -> running_known
+for _i in 7 8 9 13; do        # the DNSCrypt row's four inputs -> dnscrypt_known
+  route_unread_if_absent "$_i" 12
+done
 vpn_connected="${route_vals[0]}"
 vpn_protocol="${route_vals[1]}"
 vpn_server="${route_vals[2]}"
@@ -91,7 +123,8 @@ tor_running_known="${route_vals[17]}"
 # evidence is never overridden: only an Off is downgraded to Unknown.
 demote_unread() {
   local current="$1" known="$2"
-  if [[ "$current" == "Off" && "${known,,}" == "false" ]]; then
+  # Only a literal true is known (conky_known_is_true); "?", null or "" demote too.
+  if [[ "$current" == "Off" ]] && ! conky_known_is_true "$known"; then
     printf 'Unknown'
   else
     printf '%s' "$current"
@@ -104,7 +137,7 @@ tor_dns_on="$(demote_unread "$(bool_onoff "$tor_dns")" "$tor_dns_known")"
 # A failed DNSCrypt readback is not a reading of Off: its booleans are null,
 # which the gateway treats as absent and defaults to false, so without this
 # check the panel printed "DNSCRYPT Off" while dnscrypt-proxy was running.
-if [[ "${dnscrypt_known,,}" == "false" || "$dnscrypt_onoff" == "Unknown" || "$dnscrypt_active" == "null" ]]; then
+if ! conky_known_is_true "$dnscrypt_known" || [[ "$dnscrypt_onoff" == "Unknown" || "$dnscrypt_active" == "null" ]]; then
   dnscrypt_on="Unknown"
 elif [[ "$dnscrypt_active" =~ ^[Tt]rue$ && "$dnscrypt_configured" =~ ^[Tt]rue$ && "$dnscrypt_listening" =~ ^[Tt]rue$ ]]; then
   dnscrypt_on="On"

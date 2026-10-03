@@ -31,6 +31,26 @@ if [[ ! -x "$CARD_SCRIPT" ]]; then
     exit 0
 fi
 
+# F19 (2026-09-30): ask card-info.sh for the WHOLE block with literal values, from one
+# process. The heredoc below printed nine ${exec card-info.sh <field>} objects, and an
+# ${exec} re-runs on every panel update (20 s), so this block alone started card-info.sh
+# 27 times a minute. `block` prints the same rows from the same per-field rules, or
+# nothing with status 0 when there is no card. Anything else (an older card-info.sh
+# without the mode, a failure) falls through to the original path unchanged.
+_block_out="$("$CARD_SCRIPT" block 2>/dev/null)"
+_block_rc=$?
+if (( _block_rc == 0 )); then
+    case "$_block_out" in
+        '')
+            exit 0
+            ;;
+        '${goto 5}${font Liberation Sans Narrow:size=10:bold}${color3}VPS CARD INFO '*)
+            printf '%s\n' "$_block_out"
+            exit 0
+            ;;
+    esac
+fi
+
 if [[ "$("$CARD_SCRIPT" available 2>/dev/null)" != "Yes" ]]; then
     exit 0
 fi

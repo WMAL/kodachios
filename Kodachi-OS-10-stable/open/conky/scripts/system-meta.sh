@@ -22,6 +22,25 @@
 # Uses the conky-status gateway where applicable.
 
 set -u
+# F19: answer from the snapshot-generation memo when nothing this script reads has
+# changed (conky-snapshot-memo.sh explains why the output is identical). Besides the
+# snapshot this script reads build-meta.json, so every candidate path
+# resolve_build_meta_file below may pick is declared: one appearing, disappearing
+# or changing is a miss. Any doubt falls through to the unchanged body below.
+if [[ -z "${CONKY_MEMO_INNER:-}" && -r "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" ]]; then
+    # shellcheck disable=SC2034  # read by conky_memo_run in the sourced helper
+    CONKY_MEMO_DEPS=(
+        "${BUILD_META_FILE_CACHE:-}"
+        "${KODACHI_BUILD_META_FILE:-}"
+        "/opt/kodachi/dashboard/hooks/config/build-meta.json"
+        "$HOME/k900/dashboard/hooks/config/build-meta.json"
+        "$HOME/dashboard/hooks/config/build-meta.json"
+        "$HOME/Desktop/dashboard/hooks/config/build-meta.json"
+        "/usr/share/kodachi/config/build-meta.json"
+    )
+    . "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" && conky_memo_run "${BASH_SOURCE[0]}" "$@"
+    unset CONKY_MEMO_DEPS
+fi
 FIELD="${1:-files}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -99,11 +118,52 @@ compose_version_with_build() {
     echo "$version"
 }
 
+# F19 (2026-09-30): every field evaluates ALL its first_non_na candidates, so one
+# call made about nine get_key reads, each a subshell, a stat and a jq (a burst of
+# ~440 processes every 300 s on the live VM). While the snapshot is fresh every key
+# this script names is prefetched with ONE jq (conky_gateway_get_many). On a fresh
+# snapshot conky_gateway_get_or_default answers from the same fast-path read with the
+# same alias and null rules, and returns the default for an absent or empty key,
+# which the sentinel maps back to. A key not prefetched takes the original path.
+declare -A SM_PREFETCH=()
+SM_PREFETCH_MISS="__SM_PREFETCH_MISS__"
+SM_PREFETCH_KEYS=(
+    "system-meta.ntp"
+    "system-meta.binary-cur"
+    "data.versions.binary.cur"
+    "data.health.binary_version"
+    "data.versions.binary.on"
+    "data.online_info.releases.binary_pack.nightly_version"
+    "system-meta.binary-on"
+    "system-meta.binary-nb"
+    "data.versions.binary.nb"
+    "system-meta.terminal-cur"
+    "data.versions.terminal.cur"
+    "data.versions.terminal.on"
+    "data.online_info.releases.terminal.nightly_version"
+    "system-meta.terminal-on"
+    "system-meta.terminal-nb"
+    "data.versions.terminal.nb"
+    "system-meta.desktop-cur"
+    "data.versions.desktop.cur"
+    "data.versions.desktop.on"
+    "data.online_info.releases.desktop.nightly_version"
+    "system-meta.desktop-on"
+    "system-meta.desktop-nb"
+    "data.versions.desktop.nb"
+)
+
 get_key() {
     local key="$1"
     local default_value="${2:-N/A}"
     if [[ -z "${BIN:-}" ]]; then
         sanitize_value "$default_value"
+        return 0
+    fi
+    if [[ -n "${SM_PREFETCH[$key]+x}" ]]; then
+        local _sm_v="${SM_PREFETCH[$key]}"
+        [[ "$_sm_v" == "$SM_PREFETCH_MISS" ]] && _sm_v="$default_value"
+        sanitize_value "$_sm_v"
         return 0
     fi
     sanitize_value "$(conky_gateway_get_or_default "$key" "$default_value" 2 "$BIN")"
@@ -272,6 +332,19 @@ PY
         *)          [ "$track" = "$want" ] ;;
     esac
 }
+
+if [[ -n "${BIN:-}" ]] \
+    && declare -F conky_gateway_get_many >/dev/null 2>&1 \
+    && declare -F _conky_snapshot_is_fresh >/dev/null 2>&1 \
+    && _conky_snapshot_is_fresh; then
+    _sm_vals=()
+    mapfile -t _sm_vals < <(conky_gateway_get_many "$SM_PREFETCH_MISS" "${SM_PREFETCH_KEYS[@]}" 2>/dev/null)
+    if (( ${#_sm_vals[@]} == ${#SM_PREFETCH_KEYS[@]} )); then
+        for _sm_i in "${!SM_PREFETCH_KEYS[@]}"; do
+            SM_PREFETCH["${SM_PREFETCH_KEYS[$_sm_i]}"]="${_sm_vals[$_sm_i]}"
+        done
+    fi
+fi
 
 case "$FIELD" in
     files|timezone|resolution|boot|mode|hostname|kernel)

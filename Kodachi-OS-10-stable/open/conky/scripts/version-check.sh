@@ -22,6 +22,26 @@
 # Uses the conky-status gateway where applicable.
 
 set -u
+# F19: answer from the snapshot-generation memo when nothing this script reads has
+# changed (conky-snapshot-memo.sh explains why the output is identical). This script
+# reads through system-meta.sh, which also reads build-meta.json, so system-meta.sh
+# and every build-meta candidate it may pick are declared: a change to any of them is
+# a miss. Any doubt falls through to the unchanged body below.
+if [[ -z "${CONKY_MEMO_INNER:-}" && -r "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" ]]; then
+    # shellcheck disable=SC2034  # read by conky_memo_run in the sourced helper
+    CONKY_MEMO_DEPS=(
+        "${BASH_SOURCE[0]%/*}/system-meta.sh"
+        "${BUILD_META_FILE_CACHE:-}"
+        "${KODACHI_BUILD_META_FILE:-}"
+        "/opt/kodachi/dashboard/hooks/config/build-meta.json"
+        "$HOME/k900/dashboard/hooks/config/build-meta.json"
+        "$HOME/dashboard/hooks/config/build-meta.json"
+        "$HOME/Desktop/dashboard/hooks/config/build-meta.json"
+        "/usr/share/kodachi/config/build-meta.json"
+    )
+    . "${BASH_SOURCE[0]%/*}/conky-snapshot-memo.sh" && conky_memo_run "${BASH_SOURCE[0]}" "$@"
+    unset CONKY_MEMO_DEPS
+fi
 COMPONENT="${1:-any}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

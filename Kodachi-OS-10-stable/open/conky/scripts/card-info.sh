@@ -50,7 +50,27 @@ default_for_field() {
 }
 
 lower_trim() {
-    printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+    # F19: pure bash. Was `printf | tr '[:upper:]' '[:lower:]' | sed <trim>`, three
+    # processes per call and several calls per field. The two expansions strip
+    # leading and trailing whitespace with the same locale [[:space:]] class the sed
+    # used, and _card_ascii_lower lowers ASCII only, as tr does. A multi-line input
+    # keeps the old per-line sed so nothing changes for it.
+    local v="${1:-}"
+    if [[ "$v" == *$'\n'* ]]; then
+        printf '%s' "$v" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+        return 0
+    fi
+    v="${v#"${v%%[![:space:]]*}"}"
+    v="${v%"${v##*[![:space:]]}"}"
+    _card_ascii_lower v
+    printf '%s' "$v"
+}
+
+# tr '[:upper:]' '[:lower:]' lowers ASCII only; ${v,,} under LC_ALL=C does the same.
+_card_ascii_lower() {
+    local -n _cal_v="$1"
+    local LC_ALL=C
+    _cal_v="${_cal_v,,}"
 }
 
 compact_duration() {
@@ -142,14 +162,29 @@ compact_duration() {
     fi
 }
 
+# F19: block mode prefetches every card key with ONE jq (conky_gateway_get_many) while
+# the snapshot is fresh. On a fresh snapshot conky_gateway_get answers from the same
+# fast-path read with the same alias and null rules, and returns the caller's
+# default for an absent or empty key, which is what the sentinel below maps back to.
+# Any key not prefetched takes the original path.
+declare -A CARD_PREFETCH=()
+CARD_PREFETCH_MISS="__CARD_PREFETCH_MISS__"
+
 gateway_get_value() {
     local key="${1:-}"
     local default_value="${2:-}"
     local value=""
     [[ -n "$BIN" ]] || return 1
     declare -F conky_gateway_get >/dev/null 2>&1 || return 1
-    value=$(conky_gateway_get "$key" "$default_value" 2 "$BIN" 2>/dev/null) || return 1
-    value=$(printf '%s' "$value" | tr -d '\r' | head -n1)
+    if [[ -n "${CARD_PREFETCH[$key]+x}" ]]; then
+        value="${CARD_PREFETCH[$key]}"
+        [[ "$value" == "$CARD_PREFETCH_MISS" ]] && value="$default_value"
+    else
+        value=$(conky_gateway_get "$key" "$default_value" 2 "$BIN" 2>/dev/null) || return 1
+    fi
+    # Same as `printf | tr -d '\r' | head -n1`, without the three processes.
+    value="${value//$'\r'/}"
+    value="${value%%$'\n'*}"
     case "$(lower_trim "$value")" in
         security:*|error:*|*signature\ verification\ failed*|*permission\ denied*)
             return 1
@@ -373,9 +408,95 @@ gateway_field_value() {
     esac
 }
 
+CARD_BLOCK_KEYS=(
+    "data.online_info.vps.card.available"
+    "data.online_info.vps.card.ipv4"
+    "data.online_info.vps.card.ipv6"
+    "data.online_info.vps.card.type"
+    "data.online_info.vps.card.hostname"
+    "data.online_info.vps.card.load"
+    "data.online_info.vps.card.memory.display"
+    "data.online_info.vps.card.uptime"
+    "data.online_info.vps.card.services"
+)
+if [[ "$FIELD" == "block" && -n "$BIN" ]] \
+    && declare -F conky_gateway_get_many >/dev/null 2>&1 \
+    && declare -F _conky_snapshot_is_fresh >/dev/null 2>&1 \
+    && _conky_snapshot_is_fresh; then
+    _card_vals=()
+    mapfile -t _card_vals < <(conky_gateway_get_many "$CARD_PREFETCH_MISS" "${CARD_BLOCK_KEYS[@]}" 2>/dev/null)
+    if (( ${#_card_vals[@]} == ${#CARD_BLOCK_KEYS[@]} )); then
+        for _card_i in "${!CARD_BLOCK_KEYS[@]}"; do
+            CARD_PREFETCH["${CARD_BLOCK_KEYS[$_card_i]}"]="${_card_vals[$_card_i]}"
+        done
+    fi
+fi
+
 GW_STATE="$(gateway_card_state)"
 
+# One field's display value, by EXACTLY the rules of the per-field `*)` branch below.
+card_field_value() {
+    local f="${1:-}" v=""
+    if [[ "$GW_STATE" == "yes" ]]; then
+        v="$(gateway_field_value "$f" 2>/dev/null || true)"
+        if [[ -n "$v" ]]; then
+            printf '%s\n' "$v"
+            return 0
+        fi
+    fi
+    if [[ "$GW_STATE" == "no" ]]; then
+        default_for_field "$f"
+        return 0
+    fi
+    cached_field_value "$f"
+}
+
+card_available() {
+    case "$GW_STATE" in
+        yes) echo "Yes" ;;
+        no) echo "No" ;;
+        *)
+            if has_local_card; then
+                echo "Yes"
+            else
+                echo "No"
+            fi
+            ;;
+    esac
+}
+
+# Text parsed by conky ${execpi}: a literal "$" must be doubled.
+conky_escape() {
+    local v="${1:-}"
+    printf '%s' "${v//\$/\$\$}"
+}
+
 case "$FIELD" in
+    # F19 (2026-09-30): the WHOLE "VPS CARD INFO" block from ONE process.
+    # card-info-block.sh used to print nine `${exec card-info.sh <field>}` objects into
+    # its ${execpi 57}; an ${exec} runs on EVERY panel update (20 s), so the panel paid
+    # nine full card-info.sh runs, each with its own find_card_cache, gateway reads and
+    # $(...) subshells, every 20 s. The bug-hunter measured card-info.sh as the top
+    # spawner, 962 processes per 200 s on a box with a card. Each value here comes from
+    # card_field_value, the same rules as the per-field branch, so the text is the
+    # same; it now refreshes with the block's own 57 s cadence (the card data itself
+    # changes only when the ~90 s snapshot does). Prints nothing when no card, as the
+    # block always did.
+    block)
+        [[ "$(card_available)" == "Yes" ]] || exit 0
+        declare -A _cv=()
+        for _f in ipv4 vpscountry ipv6 type hostname load memory uptime services; do
+            _cv[$_f]="$(conky_escape "$(card_field_value "$_f")")"
+        done
+        printf '%s\n' \
+            '${goto 5}${font Liberation Sans Narrow:size=10:bold}${color3}VPS CARD INFO ${color5}${stippled_hr}${font}' \
+            '${voffset 6}${goto 5}${font Liberation Sans Narrow:size=10}${color3}IPv4: ${color1}'"${_cv[ipv4]}"'${alignr}${color3}Country: ${color1}'"${_cv[vpscountry]}" \
+            '${voffset 6}${goto 5}${font Liberation Sans Narrow:size=10}${color3}IPv6: ${color1}${alignr}'"${_cv[ipv6]}" \
+            '${voffset 6}${goto 5}${font Liberation Sans Narrow:size=10}${color3}Type: ${color1}'"${_cv[type]}"'${alignr}${color3}Host: ${color1}'"${_cv[hostname]}" \
+            '${voffset 6}${goto 5}${font Liberation Sans Narrow:size=10}${color3}Load: ${color1}'"${_cv[load]}"'${alignr}${color3}Mem: ${color1}'"${_cv[memory]}"' MB' \
+            '${voffset 6}${goto 5}${font Liberation Sans Narrow:size=10}${color3}Uptime: ${color1}'"${_cv[uptime]}"'${alignr}${color3}Services: ${color1}'"${_cv[services]}" \
+            '${color5}${stippled_hr}${font}'
+        ;;
     available)
         case "$GW_STATE" in
             yes) echo "Yes" ;;
