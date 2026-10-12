@@ -46,7 +46,7 @@ Three editions, one security core. Pick by how you want to run it.
 | **Terminal Server** | Lightweight ISO, all binaries pre-configured, no desktop. For servers and headless boxes. About 3 GB. | [Stable ISO](https://kodachi.cloud/downloads/#terminal) &middot; [Beta ISO](https://kodachi.cloud/downloads/?track=beta#terminal) &middot; [Guide](https://kodachi.cloud/docs/terminal-version.html) |
 | **Binaries / APT** | Add Kodachi's tools, and the dashboard GUI, to a Debian 13 or Ubuntu 24.04 system you already run, from the signed APT repository. | [Install instructions](https://kodachi.cloud/downloads/#binaries) |
 
-Everything lives on the **[Downloads Center](https://kodachi.cloud/downloads/)**, including the install instructions for each edition, the apt repository setup, live download trends and by-country stats. **[Verify what you downloaded](https://kodachi.cloud/docs/security/file-verify.html)** before you boot it, and [check your system is current](https://kodachi.cloud/tools/proof.html) after you do.
+Everything lives on the **[Downloads Center](https://kodachi.cloud/downloads/)**, including the install instructions for each edition, the apt repository setup, live download trends and by-country stats. **[Verify what you downloaded](https://kodachi.cloud/docs/security/file-verify.html)** before you boot it, and [check your system is current](https://kodachi.cloud/apps/status.php#proof) after you do.
 
 > Default login for the Terminal Server and Desktop editions: user `kodachi`, password `Security4All`
 
@@ -70,7 +70,7 @@ Kodachi 10 is the current stable line: new capabilities, wider feature coverage,
 | | |
 |---|---|
 | Live changelog | [kodachi.cloud/docs/changelog.html](https://kodachi.cloud/docs/changelog.html) ([raw](https://kodachi.cloud/apps/os/CHANGELOG.md)) |
-| What ships in the open | [Kodachi-OS-10-stable/open](Kodachi-OS-10-stable/open) , 225 files: the installer scripts, all 122 workflow profiles, the dock command surface, the Thunar actions, the conky collectors and the AppArmor profile. Everything there already ships in the ISO as plaintext |
+| What ships in the open | [Kodachi-OS-10-stable/open](Kodachi-OS-10-stable/open) , 226 files: the installer scripts, all 122 workflow profiles, the dock command surface, the Thunar actions, the conky collectors and the AppArmor profile. Everything there already ships in the ISO as plaintext |
 | R&D history | [Kodachi-OS-9-legacy/v9-behind-scenes-progress](Kodachi-OS-9-legacy/v9-behind-scenes-progress) |
 
 ---
@@ -97,7 +97,7 @@ Kodachi asks for a lot of trust. These exist so you do not have to give it blind
 
 Free, no account, run them from a browser:
 [Infrastructure status](https://kodachi.cloud/apps/status.php) &middot;
-[System freshness checker](https://kodachi.cloud/tools/proof.html) &middot;
+[System freshness checker](https://kodachi.cloud/apps/status.php#proof) &middot;
 [Knowledge graph](https://kodachi.cloud/tools/knowledge-graph-public.html) &middot;
 [API docs](https://kodachi.cloud/tools/api-docs.html) &middot;
 [User guide](https://kodachi.cloud/tools/user-guide.html) &middot;
