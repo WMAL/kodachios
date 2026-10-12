@@ -103,7 +103,7 @@ thunar-media-tags-plugin
 # CORRECTION, 2026-08-26, measured on the built system rather than on the lists.
 # The line above answers "is it declared?" and an earlier version of this comment
 # presented it as "is it available?", which is a different question and the wrong
-# one. It was NEVER missing from the image. On <lab-host>, built before this
+# one. It was NEVER missing from the image. On a test VM, built before this
 # line existed:
 #     dpkg -S /usr/bin/exiftool        -> libimage-exiftool-perl
 #     apt-mark showauto                -> libimage-exiftool-perl  (AUTO)

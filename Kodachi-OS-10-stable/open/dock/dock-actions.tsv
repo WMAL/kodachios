@@ -164,7 +164,7 @@
 # Qalculate! out of Files and into Utilities (Files 21 -> 20 launchers,
 # Utilities 21 -> 22), reordered Browsers, Files, Net Tools, Terminals and
 # Utilities in place, and replaced four icons with his own picks. The four he
-# picked came out of the capture as /home/<user>/Desktop/PNG-ALL/*.png, which
+# picked came out of the capture as absolute paths into a personal folder, which
 # is a PER-USER PICKER PATH that ships as a broken icon on every other machine,
 # so each one was copied into usr/share/kodachi/dock/icons/custom/ under its
 # slug and the row repointed at the shipped copy: isolation, monero-gui-wallet,

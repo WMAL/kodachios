@@ -19,7 +19,7 @@
 #
 # Both read ONE source: the conky-status snapshot cache. That matters for a dock
 # click. Collecting a fresh snapshot walks eight adapters and was measured at
-# 10.45s wall on the Kodachi 9 test VM (<lab-host>, 2026-08-17); reading the
+# 10.45s wall on the Kodachi 9 test VM (2026-08-17); reading the
 # cache is a file read. Every field below therefore comes out of a single
 # `conky-status panel all` call, so a report showing twenty facts costs exactly
 # one binary invocation rather than twenty.

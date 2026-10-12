@@ -14,7 +14,7 @@
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-03-02
 #
 # Description:
@@ -41,7 +41,7 @@ fi
 
 case "$COIN_LC" in
     state)
-        # F17 (2026-09-30): "off" while the price ticker is switched off (the default),
+        # F17 (2026-09-30): "off" while the price ticker is switched off (on by default since 2026-10-04),
         # "on" when conky-status polled prices, "unknown" when the state was not read.
         # conkyrc-system.conf shows one "Prices off" row for "off", and the price rows
         # otherwise. Unknown is NOT off: an unread state keeps the rows and their N/A.

@@ -172,7 +172,7 @@ HELPER = "/usr/local/libexec/kodachi/kodachi-repo-apt"
 HELPER_IDLE_SECONDS = int(os.environ.get("KODACHI_REPO_IDLE_TIMEOUT", "240"))
 # ZERO BYTES IS NOT THE SAME EVENT AS OUTPUT STOPPING, and conflating them cost
 # the operator four minutes of a window that looked frozen. Measured 2026-08-30
-# on <lab-host>: `pkexec kodachi-repo-apt update` sat with a password
+# on a test VM: `pkexec kodachi-repo-apt update` sat with a password
 # dialog outstanding, produced NOTHING, and the only feedback for 240 seconds
 # was a pulsing bar. `apt-get update` on the same box finishes in 6 seconds, so
 # every second of that wait was authentication, not work.
@@ -356,7 +356,7 @@ STALE_INDEX_DAYS = 7
 # reader of that pane is there for.
 # APT REPORTS 0.0000 ON EVERY dlstatus LINE OF AN INDEX REFRESH, so the
 # percentage is useless for exactly the operation run most often. Measured on
-# <lab-host>, 2026-08-30, during a real `Update from servers` and captured
+# a test VM, 2026-08-30, during a real `Update from servers` and captured
 # in a screenshot: the gauge read "Downloading  0%" while the description
 # beside it read "Retrieving file 147 of 149". The progress is in the
 # description, and `file <i> of <n>` is a stable apt string, so use it when
@@ -381,7 +381,7 @@ PROGRESS_PREFIXES = ("dlstatus:", "pmstatus:", "pmconffile:", "pmerror:",
                      "media-change:")
 
 # MEASURED AGAINST THE WINDOW THE OPERATOR NAMED AS THE STANDARD,
-# `kodachi-command-window network`, rendered offscreen on <lab-host>:
+# `kodachi-command-window network`, rendered offscreen on a test VM:
 # natural 857x628, minimum 825x628. This window was natural 1466x832 and
 # MINIMUM 1172x832, so it could not be dragged down to the size the other
 # Cairo windows open at, whatever set_default_size asked for: a content
@@ -401,7 +401,7 @@ PROGRESS_PREFIXES = ("dlstatus:", "pmstatus:", "pmconffile:", "pmerror:",
 # left the datasheet showing one metric row.
 #
 # 700 DECLARED AN OPEN_WIDTH BELOW THIS WINDOW'S CONTENT MINIMUM, WHICH IS WHY
-# IT IS NOW 760. Measured on <lab-host> with the catalogue loaded and the
+# IT IS NOW 760. Measured on a test VM with the catalogue loaded and the
 # shell's CSS installed, which is the only state in which the number is real:
 # the content minimum is 943 against a declared OPEN_WIDTH of 940.
 #
@@ -457,7 +457,7 @@ PAGE_WIDTH = OPEN_WIDTH - ui.Window.SIDEBAR_WIDTH - 28
 # A Gtk.TreeViewColumn set to FIXED sizing reports its fixed width as its
 # minimum, so seven columns adding up to 898 made the whole window refuse to be
 # narrower than 898 plus the sidebar plus the margins, whatever the window's
-# own default size said. Measured offscreen on <lab-host>: the sources
+# own default size said. Measured offscreen on a test VM: the sources
 # table alone was min=898 and the updates table min=836, against a reference
 # window whose ENTIRE minimum is 825. Every column is resizable and ellipsizes,
 # so these are opening widths and not limits.
@@ -736,7 +736,7 @@ DETAIL_MAX_WIDTH = 900
 CARD_WIDTH = 224
 
 # THE GRID'S HARD MINIMUM, AND THEREFORE PART OF THE WINDOW'S. Measured on
-# <lab-host> with the shared CSS installed, which is the state setUpClass
+# a test VM with the shared CSS installed, which is the state setUpClass
 # builds and which my first two probes did not have: sidebar 208 + grid 316 +
 # datasheet 432 = 956, against a declared OPEN_WIDTH of 940, so the converted
 # window's declared geometry disagreed with the geometry GTK produced. It was
@@ -1249,7 +1249,7 @@ def dev_auth_file_present():
     readable. It is not: `verb_dev_credentials` chmods it 0600 root:root
     (kodachi-repo-apt:634) precisely so no local user can read the password,
     and the 0755 on the DIRECTORY only permits stat, never open. Measured on
-    <lab-host>: the directory is drwxr-xr-x root:root. So `getsize` is
+    a test VM: the directory is drwxr-xr-x root:root. So `getsize` is
     the strongest question an unprivileged process may ask, and the fix is to
     stop overclaiming its answer rather than to strengthen the predicate.
 
@@ -2286,7 +2286,7 @@ class RepoManager:
                 RUN STARTED. That is the feature the operator asked for, and it
                 had never once run.
 
-            MEASURED 2026-08-30 on <lab-host>, real window, offscreen,
+            MEASURED 2026-08-30 on a test VM, real window, offscreen,
             open at 944x700 then resize to 3414x1408, which is the sequence of
             opening it and maximising it:
 
@@ -2692,7 +2692,7 @@ class RepoManager:
         # built from STATE_COLOURS itself, so a state added to that table
         # cannot be missing from the key.
         # ON ITS OWN ROW, NOT IN THE TOOLBAR. Measured at the real 940x700
-        # opening size on <lab-host>: beside the search entry, the
+        # opening size on a test VM: beside the search entry, the
         # segmented channel control and the counter, the five legend words were
         # allocated 25px each against the 35 to 72px they need, so every one of
         # them rendered as an ellipsis. The toolbar is simply not wide enough
@@ -2750,7 +2750,7 @@ class RepoManager:
             item.pack_start(dot, False, False, 0)
             text = ui.cls(ui.lbl(word.title(), "note"), "repo-legend-word")
             # THE LEGEND MUST NOT SET THE WINDOW'S MINIMUM WIDTH. Measured
-            # offscreen on <lab-host> after this legend was added: the
+            # offscreen on a test VM after this legend was added: the
             # toolbar's minimum went to 816px, of which the legend alone was
             # 340, and the whole window's minimum went to 1032 against an
             # OPEN_WIDTH of 940. The contract
@@ -2769,7 +2769,7 @@ class RepoManager:
             # THE LEGEND. That property CLAMPS THE NATURAL width, it does not
             # preserve it, so these labels asked for one character and, packed
             # with expand=False, were allocated exactly that. Measured on
-            # <lab-host> at the real 940x700 opening size: "Update" got
+            # a test VM at the real 940x700 opening size: "Update" got
             # 8px against the 35px it needs, "Not In Channel" 8px against 72,
             # and the package counter 9px against 101. Five labels rendered as
             # a smear of ellipsis, including the legend added to answer his
@@ -3253,7 +3253,7 @@ class RepoManager:
         self.ds_actions.set_margin_bottom(9)
 
         # THE CLOSE BUTTON DOES NOT SCROLL, AND IS NOT UNDER THE SCROLLBAR.
-        # Measured on <lab-host> at 1600x1000: with the \u2715 packed into
+        # Measured on a test VM at 1600x1000: with the \u2715 packed into
         # the datasheet's own header, inside the scroller, GTK's overlay
         # scrollbar is drawn on top of it and a pointer click reaches the
         # scrollbar instead of the button, so the slide-over could not be
@@ -3829,7 +3829,7 @@ class RepoManager:
 
     # THE MEASURED SIGNATURE OF A DESKTOP WITH NO POLKIT AGENT, and it is a
     # CONJUNCTION of two tokens that pkexec itself printed on
-    # <lab-host>, 2026-08-30, in one line:
+    # a test VM, 2026-08-30, in one line:
     #
     #   Error creating textual authentication agent: Error opening current
     #   controlling terminal for the process (`/dev/tty'): No such device or
@@ -4492,7 +4492,12 @@ class RepoManager:
             body.show_all()
             return
         if not self.iso_rows:
-            body.pack_start(ui.lbl("not checked yet", "note"), False, False, 0)
+            # A CHECKED read with no rows is a machine that carries no Kodachi ISO
+            # edition (the binary pack on plain Debian/Ubuntu, iso_stamped_track
+            # ""), not one that was never checked. repo.iso_rows decides it.
+            body.pack_start(ui.lbl(repo.ISO_NONE_CARRIED_NOTE
+                                   if self.iso_checked else "not checked yet",
+                                   "note", wrap=True), False, False, 0)
             body.show_all()
             return
         for entry in self.iso_rows:
@@ -4571,10 +4576,13 @@ class RepoManager:
                     rows = repo.iso_rows(info)
                     # Keep the last successful read so a later offline open can
                     # still show something, labelled with when it was read.
+                    # `info` is kept too, so that open re-judges the published
+                    # builds against the edition this machine carries THEN.
                     repo.write_iso_cache({
                         "read_at": time.strftime("%Y-%m-%d %H:%M UTC",
                                                  time.gmtime()),
                         "rows": rows,
+                        "info": info,
                     })
             except BaseException as exc:
                 error = "could not read ISO image versions: %s" % _exc_detail(exc)
@@ -4589,7 +4597,9 @@ class RepoManager:
             if error and not rows:
                 # Fall back to the last successful read, and SAY it is old.
                 cached = repo.read_iso_cache()
-                cached_rows = cached.get("rows")
+                # Rebuilt, never replayed: a cache written by the rule that drew
+                # every edition would bring the phantom row back offline.
+                cached_rows = repo.iso_rows_from_cache(cached)
                 if isinstance(cached_rows, list) and cached_rows:
                     rows = cached_rows
                     self.iso_read_at = str(cached.get("read_at") or "")
@@ -4608,6 +4618,9 @@ class RepoManager:
                 if error:
                     self.iso_note.set_text("could not check")
                     self.iso_note.set_tooltip_text(error)
+                elif not self.iso_rows:
+                    self.iso_note.set_text("no ISO image on this machine")
+                    self.iso_note.set_tooltip_text(repo.ISO_NONE_CARRIED_NOTE)
                 elif pending:
                     self.iso_note.set_text("%d image%s with a newer build: %s"
                                            % (len(pending),
@@ -4694,7 +4707,7 @@ class RepoManager:
         head.set_margin_top(8)
         head.set_margin_bottom(4)
         # ELLIPSIZE, or this sentence decides how narrow the window can be.
-        # Measured on <lab-host>: without it the page reported a 1085px
+        # Measured on a test VM: without it the page reported a 1085px
         # minimum against an OPEN_WIDTH of 940, because a label with neither
         # wrap nor ellipsize reports its whole text as its MINIMUM. The
         # sources page carries the same shape at 85 characters and stays
@@ -5851,7 +5864,7 @@ class RepoManager:
         # FULL identity, every field that distinguishes one entry from another
         # in the same file, because each field left out is a collision:
         # omitting `types` matched an enabled `deb` against its own
-        # commented-out `deb-src` twin (measured on <lab-host>, where the
+        # commented-out `deb-src` twin (measured on a test VM, where the
         # detail pane read "State: enabled" under a row whose Status column
         # read "disabled"), and omitting `components` collides for
         # `deb ... trixie main` beside `deb ... trixie contrib`.
@@ -7054,7 +7067,7 @@ class RepoManager:
             # was in the tooltip, but the prose under the flow only offers a
             # version constraint as a reason to hover, so a reader looking at
             # a version-free chip had no cue that one existed.
-            # MEASURED BEFORE ADOPTING IT, on <lab-host>: 3 of 9
+            # MEASURED BEFORE ADOPTING IT, on a test VM: 3 of 9
             # `Depends:` lines in the stable apps index carry an alternative,
             # plus 1 of 4 `Recommends:` in main, so this is live on codium,
             # gitkraken, librewolf and kodachi-hooks-core rather than
@@ -7435,7 +7448,7 @@ class RepoManager:
         # STYLE CHOICE. `self.confirm` runs a MODAL dialog, and `dialog.run()`
         # does not return until somebody answers it. Calling it inline here
         # meant set_channel("dev") never returned on any machine with no user
-        # in front of it. MEASURED 2026-08-29 on <lab-host>: the full GTK
+        # in front of it. MEASURED 2026-08-29 on a test VM: the full GTK
         # suite ran 130 contracts green and then hung indefinitely on
         # `test_the_dev_lock_greys_the_buttons_it_already_refuses`, which does
         # exactly `set_channel("dev")` with dev_auth_file_present patched to
@@ -8155,7 +8168,7 @@ class RepoManager:
             keyring_box.set_sensitive(not locked)
             # THE KEYRING IS NAMED IN THE NOTE, AT FULL CONTRAST, and it is
             # there because of what a screenshot of this dialog showed.
-            # Measured 2026-08-30 on <lab-host> by mapping the real
+            # Measured 2026-08-30 on a test VM by mapping the real
             # dialog and reading the PNG: with a preset chosen, the two combo
             # rows are insensitive, and `kodachi-archive-keyring.gpg` is the
             # DIMMEST string on screen. It is also the single most important
@@ -8320,7 +8333,7 @@ class RepoManager:
         NON-BLOCKING FROM HERE DOWN, AND THE FIRST FIX WAS NOT ENOUGH.
         Deferring the prompt to an idle callback removed the hang only for a
         caller that never runs a main loop. MEASURED 2026-08-29 on
-        <lab-host>, on a clean node with the idle fix in place: the suite
+        a test VM, on a clean node with the idle fix in place: the suite
         passed the test that hung before and then stopped dead on
         `test_the_index_synced_cell_never_says_unknown`, which calls
         `set_channel("dev")` and then pumps the loop. The remote process was in
@@ -9002,7 +9015,7 @@ class RepoManager:
             # cause is that no polkit AUTHENTICATION AGENT is running, so there
             # is nothing to draw the password dialog; pkexec falls back to a
             # textual agent, finds no controlling terminal, and gives up in
-            # milliseconds. MEASURED on <lab-host>, 2026-08-30, where the
+            # milliseconds. MEASURED on a test VM, 2026-08-30, where the
             # operator pressed Install and got "FAILED , exit code 127 after
             # 0s" and no other clue:
             #   Error creating textual authentication agent: Error opening

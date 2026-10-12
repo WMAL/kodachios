@@ -21,7 +21,7 @@
 # SOURCED, never executed. Serves a panel script's previous output when nothing
 # that script reads has changed since it was computed, with no process spawned.
 #
-# WHY (F19, measured 2026-09-30 on the live <lab-host> VM <lab-host>, idle
+# WHY (F19, measured 2026-09-30 on the live <lab-host> VM, idle
 # desktop, dashboard minimized, not torrified): the conky stack cost 5,697
 # forks/min and 47% CPU on 2 vCPUs against 1,269 forks/min and 19% with conky
 # off. A bpftrace fork tree put 7,946 of the box's 12,588 forks in 120 s under

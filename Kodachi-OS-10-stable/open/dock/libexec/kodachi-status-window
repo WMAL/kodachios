@@ -316,7 +316,7 @@ def plain_block(card, lines):
     """A run of untagged lines as ONE read-only, selectable Gtk.TextView.
 
     NOT A LABEL, AND NOT ONE LABEL PER LINE. MEASURED 2026-09-03 on VM
-    <lab-host> (seat :0, 3440x1440), time from construction to the
+    (seat :0, 3440x1440), time from construction to the
     window's map-event on this exact shell, five strategies:
 
         lines     one label   label per line   200-line chunks   TextView

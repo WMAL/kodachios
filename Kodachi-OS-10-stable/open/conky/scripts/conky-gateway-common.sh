@@ -14,7 +14,7 @@
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-03-02
 #
 # Description:
@@ -163,7 +163,7 @@ declare -gA _CONKY_KEY_ALIASES=(
     ["crypto-price.azero"]="data.online_info.prices.azero"
     ["crypto-price.xau"]="data.online_info.prices.xau"
     ["crypto-price.xag"]="data.online_info.prices.xag"
-    # F17: "on", "off" (price ticker switched off, the default) or "unknown".
+    # F17: "on" (the default since 2026-10-04), "off" (switched off by the user) or "unknown".
     ["crypto-price.state"]="data.online_info.prices_state"
     ["version-check.binary"]="data.versions.binary.status"
     ["version-check.terminal"]="data.versions.terminal.status"

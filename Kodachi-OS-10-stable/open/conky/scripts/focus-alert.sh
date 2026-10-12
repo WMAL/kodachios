@@ -139,7 +139,7 @@ if (( NEWS_ROTATE_INTERVAL < 30 )); then NEWS_ROTATE_INTERVAL=30; fi
 
 # F19 (2026-09-30): PURE-BASH CORE OF sanitize_value, WRITTEN INTO A NAMED VARIABLE.
 #
-# Measured on the live <lab-host> VM <lab-host> with a bpftrace fork tree: this
+# Measured on the live <lab-host> VM with a bpftrace fork tree: this
 # script rooted 3,049 of the 7,946 forks the whole conky tree made in 120 s (38%),
 # and almost all of them were `$(echo "$v" | sed ...)` and `| tr | sed` inside
 # sanitize_value / normalize_compare_value, called ~100 times per poll by
@@ -624,7 +624,9 @@ read_snapshot_values() {
                 "mac=" + safe(.data.system.network.mac; "N/A"),
                 # Inspector pass 7 (#6): a missing key is a reading that did not happen,
                 # so it defaults to Unknown (ignored as a change), never Off/None.
-                "vpn=" + safe(.data.routing.onoff; "Unknown"),
+                # Round 12 (2026-10-06): a connect waiting for its handshake is "Connecting",
+                # not "On" (routing-switch keeps `connected` true until the server answers).
+                "vpn=" + (if .data.routing.connecting == true then "Connecting" elif .data.routing.connect_unfinished == true then "Incomplete" else safe(.data.routing.onoff; "Unknown") end),
                 "protocol=" + safe(.data.routing.protocol; "Unknown"),
                 "dnscrypt=" + safe(.data.dns.dnscrypt_onoff; "Unknown"),
                 "firewall=" + (
@@ -837,11 +839,24 @@ overlay_auth_status_from_online_auth() {
     auth_json="$(timeout "$AUTH_CHECK_TIMEOUT" "$auth_bin" check-login --json 2>/dev/null || true)"
     [[ -n "$auth_json" ]] || return 0
 
+    # Round 12 (2026-10-06): the same rule as workflow-manager, conky-status and the dashboard. The
+    # reply's fields must AGREE (a true and a false together is unknown, it used to read On), and an
+    # error envelope proves a logout only with online-auth's canonical "Session is invalid" message: a
+    # FAILED check (network down, timeout) carries is_logged_in false too and used to read Off. An
+    # unknown answer prints "?", which the case below ignores, so it never overrides the panel.
     auth_onoff="$(jq -r '
-        if (.data.is_logged_in == true) or (.is_logged_in == true) then "On"
-        elif ((.status // "") | ascii_downcase) == "success" then "On"
-        else "Off"
-        end
+        ((.status // "") | tostring | ascii_downcase) as $st
+        | (((.message // "") | tostring) as $m
+           | if $m != "" then $m else ((.errors[0].message? // "") | tostring) end) as $msg
+        | ([.data.is_logged_in?, .is_logged_in?] | map(select(type == "boolean"))) as $f
+        | if $st == "error" then
+              (if ($msg | test("^\\s*Session is invalid(\\.|$)"; "i")) then "Off" else "?" end)
+          elif ($f | index(true)) and ($f | index(false)) then "?"
+          elif ($f | index(true)) then "On"
+          elif ($f | index(false)) then "Off"
+          elif $st == "success" or $st == "valid" then "On"
+          else "?"
+          end
     ' <<< "$auth_json" 2>/dev/null || true)"
 
     case "$auth_onoff" in
@@ -881,6 +896,13 @@ overlay_routing_from_switch() {
     if [[ "$onoff" == "on" ]]; then
         protocol="$(conky_gateway_get_or_default "data.routing.protocol" "None" 2 "$bin")"
         values[vpn]="On"
+        # Round 12 (2026-10-06): routing-switch keeps `connected` true while a connect waits for
+        # the server's handshake; the strip says "Connecting" until the server has answered.
+        if [[ "$(conky_gateway_get_or_default "data.routing.connecting" "false" 2 "$bin")" == "true" ]]; then
+            values[vpn]="Connecting"
+        elif [[ "$(conky_gateway_get_or_default "data.routing.connect_unfinished" "false" 2 "$bin")" == "true" ]]; then
+            values[vpn]="Incomplete"
+        fi
         values[protocol]="$(normalize_protocol_value "$protocol")"
     elif [[ "$onoff" == "?" || "$onoff" == "unknown" || "$onoff" == "null" || "$onoff" == "" \
             || "$connected_measured" -eq 0 ]]; then

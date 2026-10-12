@@ -60,7 +60,7 @@ readonly REQUEST_TIMEOUT=20
 #
 # This was a frozen `rv:128.0 ... Firefox/128.0` string, chosen when Firefox
 # 128 ESR was current and never revisited. MEASURED 2026-09-04 on the live
-# <lab-host> ISO, <lab-host>, by pointing the shipped browser at a local
+# <lab-host> ISO, a test VM, by pointing the shipped browser at a local
 # one-shot HTTP listener and reading the request header it actually sent:
 #
 #     /usr/local/bin/librewolf --version   ->  LibreWolf 155.0-1

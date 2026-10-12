@@ -128,7 +128,7 @@ FIREJAIL_ARGS = {
     # bare `ignore apparmor` left the browser AppArmor-unconfined, and I shipped
     # `--apparmor` here as the remedy. BOTH HALVES WERE WRONG. The finding was
     # false and the remedy was a REGRESSION that stopped the browser launching.
-    # Measured on <lab-host> as a same-run A/B, then RE-RUN WITH THE TWO
+    # Measured on a test VM as a same-run A/B, then RE-RUN WITH THE TWO
     # ARMS IN THE OPPOSITE ORDER to kill the ordering objection. Both orders
     # agree, from a verified-clean pre-state each time:
     #     without --apparmor (as shipped)  10-12 librewolf processes, every one

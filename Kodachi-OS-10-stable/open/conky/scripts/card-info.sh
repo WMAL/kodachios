@@ -14,7 +14,7 @@
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-03-02
 #
 # Description:
@@ -255,7 +255,7 @@ cached_vps_country() {
     # ASK THE SOURCE THAT ACTUALLY HAS THE DATA FIRST.
     #
     # THE DEFECT: this function read ONLY ~/.cache/kodachi/cloud-cache.json, and
-    # that file DOES NOT EXIST on a live boot. Measured on <lab-host>: the
+    # that file DOES NOT EXIST on a live boot. Measured on a test VM: the
     # file is absent, so every call fell through to the bare "-" below, and the
     # panel rendered "IPv4: 198.105.112.55" with a floating unlabelled hyphen at
     # the right margin, while every other card field was healthy.
@@ -272,7 +272,7 @@ cached_vps_country() {
     #
     # Reported by <agent> on the <lab-host> live ISO.
     # FETCH THE NODES ARRAY AND READ FIELD 0, do NOT ask for a dotted index path.
-    # Measured on <lab-host>: the gateway's snapshot fast path CANNOT index
+    # Measured on a test VM: the gateway's snapshot fast path CANNOT index
     # into an array, so `data.online_info.vps.nodes.0.vpscountry` comes back MISS,
     # while `data.online_info.vps.nodes` returns the whole array and the binary
     # resolves the indexed form perfectly. My first attempt at this fix used the
@@ -382,7 +382,7 @@ gateway_field_value() {
         # the dotted INDEX path it used returns MISS: the gateway's snapshot fast
         # reader cannot index into an array, so this fell through to "-" and the
         # panel printed a bare unlabelled hyphen. Traced with bash -x on
-        # <lab-host> after two earlier attempts patched cached_vps_country,
+        # a test VM after two earlier attempts patched cached_vps_country,
         # which this path never reaches. cached_vps_country now holds the working
         # array-based lookup, so both entry points share one implementation.
         vpscountry) cached_vps_country ;;

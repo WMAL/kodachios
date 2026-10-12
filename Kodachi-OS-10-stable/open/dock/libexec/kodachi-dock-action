@@ -258,11 +258,19 @@ ensure_authenticated() {
         return 1
     fi
 
-    if sudo -n online-auth check-login >/dev/null 2>&1; then
+    local check
+    if check="$(sudo -n online-auth check-login 2>&1)"; then
         return 0
     fi
 
-    dock_notify low "Kodachi" "Not logged in. Authenticating..." 5
+    # Round 12 (2026-10-06): check-login exits 1 both for a logout and for a check that could not run
+    # (network down, sudo refused). Only online-auth's canonical line proves a logout; anything else is
+    # announced as unconfirmed. Either way the gate still fails closed and authenticates below.
+    if printf '%s\n' "$check" | grep -qiE '^[[:space:]]*Session is invalid(\.|$)'; then
+        dock_notify low "Kodachi" "Not logged in. Authenticating..." 5
+    else
+        dock_notify low "Kodachi" "Could not confirm the login. Authenticating..." 5
+    fi
 
     local output
     if output="$(sudo -n online-auth authenticate 2>&1)"; then
@@ -888,7 +896,7 @@ show_in_window() {
 # cairo-dock silently substitutes a generic "?" for an Icon= it cannot load. The
 # launcher file is valid, the build is byte-reproducible, --check passes, and the
 # dock shows a question mark where the art should be. Measured on
-# <lab-host>, 2026-08-19: two of eight group containers pointed at
+# a test VM, 2026-08-19: two of eight group containers pointed at
 # papirus/gcr-key.svg and papirus/system-file-manager.svg, neither of which is in
 # the shipped icon set, and BOTH mandatory gates were green. The 71 cell icons
 # had been verified against the real file list and the 8 container icons had not,
@@ -898,7 +906,7 @@ show_in_window() {
 #
 # The main dock is a 100px strip of images. The label is a hover tooltip, so the
 # IMAGE is the only thing distinguishing one entry from another at a glance.
-# Measured on <lab-host>, 2026-08-19: the Network command window and the
+# Measured on a test VM, 2026-08-19: the Network command window and the
 # Network launcher group both carried fluent-emoji/world-map.png, and the System
 # window and System group both carried papirus/preferences-desktop.svg, so four
 # icons on the bar were two indistinguishable pairs doing different things. Every
@@ -909,7 +917,7 @@ show_in_window() {
 # TWO ICONS WITH THE SAME LABEL ARE AS BAD AS TWO WITH THE SAME PICTURE.
 #
 # On a dock the tooltip is the only text, so the NAME is the other half of what
-# distinguishes one icon from another. Measured on <lab-host>: the Network
+# distinguishes one icon from another. Measured on a test VM: the Network
 # command window and the Network launcher GROUP were both labelled "Network",
 # and System likewise, so four icons were two indistinguishable pairs doing
 # entirely different things (one opens the VPN/Tor/DNS control surface, one
@@ -1080,7 +1088,7 @@ dock_icon_check() {
     # icon below is re-rooted under it, so a root that is absent or unsearchable makes
     # every `-f` fail and the arm prints one MISSING line per icon plus `0/N exist`.
     # That reads as "the ISO ships no dock icons", a release blocker, and it is an
-    # instrument error. Measured 2026-09-07 by <agent> on <lab-host> and
+    # instrument error. Measured 2026-09-07 by <agent> on a test VM and
     # reproduced on the dev host: a root of cairo-dock/usr/local/share/kodachi/dock/icons
     # (absent, and what playbook 33.5 wrongly documented) turned 132/132 into 0/132 with
     # 132 false MISSING lines, while all 132 icons sat present at the absolute paths the

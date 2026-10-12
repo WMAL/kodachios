@@ -103,6 +103,37 @@ fi
 RUN_T0=$(date +%s)
 RUN_STARTED=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
+# B2 (round 11, 2026-10-03): the collector must not destroy the audit history
+# it is collecting. Kodachi audits every root exec by a logged-in user
+# (10-kodachi.rules, key privileged_exec: euid=0, auid>=1000, auid!=-1), and
+# this script runs as `sudo bash` and execs a few thousand commands, about
+# 2 KB of audit records each. Measured in a real user bundle: auditd rotated
+# its whole 8 MB x 5 history 26 times in 2 minutes during one collector run
+# and 10 more times during the next, so 04-tor/apparmor-denials.txt came back
+# empty. The collector drops its OWN login uid to unset (root holds
+# CAP_AUDIT_CONTROL; the kernel writes a LOGIN audit record for the change),
+# so its descendants no longer match the rule. The rule itself is unchanged:
+# the sudo that started this script is still recorded, and so is every other
+# privileged exec on the system.
+AUDIT_SELF_NOTE="not attempted"
+kdc_quiet_own_audit_trail() {
+    local f="/proc/$$/loginuid" before after
+    [[ -r "$f" ]] || { AUDIT_SELF_NOTE="no $f (kernel without audit)"; return 0; }
+    before=$(cat "$f" 2>/dev/null)
+    if [[ "$before" == "4294967295" ]]; then
+        AUDIT_SELF_NOTE="login uid already unset"
+        return 0
+    fi
+    { printf '%s' 4294967295 > "$f"; } 2>/dev/null
+    after=$(cat "$f" 2>/dev/null)
+    if [[ "$after" == "4294967295" ]]; then
+        AUDIT_SELF_NOTE="own login uid ${before} -> unset, collector commands do not match privileged_exec"
+    else
+        AUDIT_SELF_NOTE="login uid unchanged (${before}): the kernel refused the change (immutable loginuid, or no CAP_AUDIT_CONTROL); collector commands are audited"
+    fi
+}
+kdc_quiet_own_audit_trail
+
 # Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1104,6 +1135,15 @@ redact_secrets() {
         }
         return out r
     }
+    # Replace every occurrence of a literal needle, no boundary test.
+    function rawsub(line, needle, tok,   out, r, q) {
+        out = ""; r = line
+        while ((q = index(r, needle)) > 0) {
+            out = out substr(r, 1, q - 1) tok
+            r = substr(r, q + length(needle))
+        }
+        return out r
+    }
     function redc(line, name, re_first, re_rest, tok,   out, r, hl, e, first, ok) {
         out = ""; r = line; hl = length(name); first = 1
         while (1) {
@@ -1225,6 +1265,12 @@ redact_secrets() {
             if (M[m] == "C") HASC[kind] = 1
             # ps truncates a long USER column to 7 characters plus "+".
             TR[m] = (kind == "U" && length(H[m]) > 8) ? substr(H[m], 1, 7) "+" : ""
+            # B1 (round 11, 2026-10-03): last(1), w(1) and lastlog cut a long
+            # account name to its first 8 characters with NO marker. Measured in
+            # a real user bundle: 7 lines in last.txt, w.txt and last-logins.txt
+            # carried the first 8 of 11 characters. Replaced on a word boundary,
+            # after the full name, so it never cuts into the full name.
+            TR8[m] = (kind == "U" && length(H[m]) > 8) ? substr(H[m], 1, 8) : ""
         }
     }
     # Context test per OCCURRENCE (v1.8, inspector N5). The earlier form ran
@@ -1356,6 +1402,18 @@ redact_secrets() {
         ALIASCTX = "\"aliases\"[ \t]*:[ \t]*\\[(\"[^\"]*\"[ \t]*,[ \t]*)*\""
         NSP = 5
         SPRE[5] = "User "; SSUF[5] = " is new"
+        # B1 (round 11): disk serials, one "token:form" entry per FORM
+        # (kdc_build_serial_list), longest form first. A serial is a
+        # high-entropy hardware identifier, so it is replaced anywhere, with
+        # no word boundary: it sits glued inside by-id unit names
+        # (nvme-MODEL_SERIAL-part1) and inside the hex nvme.VID-HEX-HEX wwid.
+        ns = split(ENVIRON["KDC_REDACT_SERIALS"], SL, " ")
+        nsv = 0
+        for (i = 1; i <= ns; i++) {
+            if (split(SL[i], SF, ":") != 2 || length(SF[2]) < 6) continue
+            nsv++; SN[nsv] = dec(SF[2]); ST[nsv] = "[REDACTED-SERIAL-" SF[1] "]"
+        }
+        ns = nsv
         SPRE[1] = "";      SSUF[1] = "(uid="
         SPRE[2] = "User "; SSUF[2] = " authorized"
         SPRE[3] = "user "; SSUF[3] = " added"
@@ -1374,6 +1432,7 @@ redact_secrets() {
                 t = T[j]; T[j] = T[j - 1]; T[j - 1] = t
                 t = RF[j]; RF[j] = RF[j - 1]; RF[j - 1] = t
                 t = TR[j]; TR[j] = TR[j - 1]; TR[j - 1] = t
+                t = TR8[j]; TR8[j] = TR8[j - 1]; TR8[j - 1] = t
             }
         }
         # debconf records (questions.dat / templates.dat) whose values are
@@ -1412,11 +1471,14 @@ redact_secrets() {
                 line = PF[1] ":" PF[2] ":" PF[3] ":" PF[4] ":[REDACTED-FULLNAME]:" PF[6] ":" PF[7]
         }
         line = geoline(line)
+        # ---- disk serial numbers and device identifiers, every form, anywhere
+        for (i = 1; i <= ns; i++) if (index(line, SN[i]) > 0) line = rawsub(line, SN[i], ST[i])
         if (m == 0) { print line; next }
         # ---- word-mode names, longest first, anywhere in the text
         for (i = 1; i <= m; i++) {
             if (TR[i] != "" && index(line, TR[i]) > 0) line = redw(line, TR[i], T[i], PB[i])
             if (M[i] == "W" && index(line, H[i]) > 0) line = redw(line, H[i], T[i], PB[i])
+            if (TR8[i] != "" && index(line, TR8[i]) > 0) line = redw(line, TR8[i], T[i], PB[i])
         }
         # ---- context-mode names, per segment between JSON \n escapes
         anyc = 0
@@ -1595,6 +1657,72 @@ kdc_build_user_list() {
 KDC_REDACT_USERS=$(kdc_build_user_list)
 export KDC_REDACT_USERS
 
+# B1 (round 11, 2026-10-03): disk serial numbers and device identifiers. A
+# real user bundle carried the NVMe serial in 7 files: the smartd "S/N:" line
+# (journal, syslog), efibootmgr, systemd /dev/disk/by-id unit names (system
+# and user unit lists, the systemd-analyze plot) and HEX-encoded inside the
+# nvme.VID-HEXSERIAL-HEXMODEL-NSID wwid unit names. Every FORM of every serial
+# is listed, sharing one token per device: the serial itself, spaces as "_"
+# (by-id), "-" as the systemd escape \x2d (raw and JSON-escaped), the hex
+# encoding in both cases, and the EUI-64/NAA wwid (bare, upper case, and the
+# dashed EUI form efibootmgr prints inside NVMe(...)). Entries are
+# "token:form" with space, colon and percent percent-encoded.
+kdc_build_serial_list_from() {
+    LC_ALL=C awk '
+    BEGIN { for (i = 0; i < 256; i++) ORD[sprintf("%c", i)] = i }
+    function hex(str,   out, i) { out = ""; for (i = 1; i <= length(str); i++) out = out sprintf("%02x", ORD[substr(str, i, 1)]); return out }
+    function enc(str) { gsub(/%/, "%25", str); gsub(/ /, "%20", str); gsub(/:/, "%3A", str); return str }
+    function add(form, tok) { if (length(form) >= 6 && !(form in SEEN)) { SEEN[form] = 1; n++; FORM[n] = form; TOK[n] = tok } }
+    {
+        kind = substr($0, 1, 1); v = substr($0, 3)
+        gsub(/^[ \t]+|[ \t]+$/, "", v)
+        if (v == "" || v ~ /^[0 ]*$/) next
+        if (kind == "W") {
+            if (v !~ /^(eui|naa)\.[0-9A-Fa-f]+$/) next
+            v = tolower(substr(v, index(v, ".") + 1))
+        }
+        if (length(v) < 6 || (v in TOKOF)) next
+        TOKOF[v] = ++t
+        add(v, t)
+        if (kind == "W") {
+            add(toupper(v), t)
+            if (length(v) == 16) {
+                d = ""; for (i = 1; i <= 16; i += 2) d = d (i > 1 ? "-" : "") toupper(substr(v, i, 2))
+                add(d, t)
+            }
+            next
+        }
+        u = v; gsub(/ /, "_", u); add(u, t)
+        e = u; gsub(/-/, "\\x2d", e); add(e, t)
+        j = u; gsub(/-/, "\\\\x2d", j); add(j, t)
+        h = hex(v); add(h, t); add(toupper(h), t)
+    }
+    END {
+        for (i = 2; i <= n; i++)
+            for (j = i; j > 1 && length(FORM[j]) > length(FORM[j - 1]); j--) {
+                x = FORM[j]; FORM[j] = FORM[j - 1]; FORM[j - 1] = x
+                x = TOK[j]; TOK[j] = TOK[j - 1]; TOK[j - 1] = x
+            }
+        out = ""
+        for (i = 1; i <= n; i++) out = out (i > 1 ? " " : "") TOK[i] ":" enc(FORM[i])
+        printf "%s", out
+    }'
+}
+kdc_build_serial_list() {
+    local f
+    {
+        for f in /sys/class/nvme/nvme*/serial /sys/block/*/device/serial; do
+            [[ -r "$f" ]] && printf 'S %s\n' "$(tr -d '\000' < "$f" 2>/dev/null)"
+        done
+        lsblk -dno SERIAL 2>/dev/null | sed 's/^/S /'
+        for f in /sys/block/*/wwid /sys/block/*/device/wwid; do
+            [[ -r "$f" ]] && printf 'W %s\n' "$(tr -d '\000' < "$f" 2>/dev/null)"
+        done
+    } | kdc_build_serial_list_from
+}
+KDC_REDACT_SERIALS=$(kdc_build_serial_list)
+export KDC_REDACT_SERIALS
+
 # v1.8 (inspector N1): the full name of each human account (GECOS field 5,
 # up to the first comma). The installer log and debconf questions.dat carried
 # it verbatim. Entries are token:mode:name with space, colon and percent
@@ -1648,10 +1776,28 @@ export -f redact_secrets
 # printed BOTH the status and "not found" for an inactive unit. Exit 3 now
 # returns 0 and appends the properties that say WHY the unit is inactive.
 # Every other status (4 = no such unit) is passed through unchanged.
+# B8 (round 11): a text file (empty counts as text); grep -I treats a file
+# with NUL bytes as binary and does not match it.
+kdc_is_text_file() {
+    [[ -f "$1" ]] || return 1
+    [[ -s "$1" ]] || return 0
+    LC_ALL=C grep -Iq . "$1" 2>/dev/null
+}
+
 kdc_unit_status() {
-    local rc
-    systemctl status "$@" --no-pager -l 2>&1
+    local rc out
+    out=$(systemctl status "$@" --no-pager -l 2>&1)
     rc=$?
+    # B8 (round 11): a pattern that matches no LOADED unit (wg-quick@*, awg-quick@*
+    # when the tunnel is not a unit) prints nothing and exits 0, so the bundle
+    # said "Command produced no output" and the || fallback never fired. Say so,
+    # and list the unit files that match, which is what triage needs.
+    if [[ -z "$out" ]]; then
+        echo "[no loaded unit matches: $*]"
+        systemctl list-unit-files "$@" --no-pager 2>/dev/null
+        return 0
+    fi
+    printf '%s\n' "$out"
     if [[ $rc -eq 3 ]]; then
         echo ""
         echo "[systemctl status exit 3: not active, which is a unit state and not a probe failure]"
@@ -1660,7 +1806,7 @@ kdc_unit_status() {
     fi
     return $rc
 }
-export -f kdc_unit_status
+export -f kdc_unit_status kdc_is_text_file
 
 # v1.7: every FILE that goes through the redactor goes through this instead.
 # safe_exec bounds the producer with `timeout`, but the redaction of its
@@ -2125,8 +2271,12 @@ if grep -q "boot=live" /proc/cmdline 2>/dev/null; then
 fi
 
 # Method 3: Root filesystem type
+# The mount in use is the LAST row of a stacked mount point, and -v drops the "[/dir]" findmnt
+# appends to SOURCE for a btrfs subvolume or a bind mount; exact comparisons below need both.
 ROOT_FS=$(findmnt -n -o FSTYPE / 2>/dev/null || echo "unknown")
-ROOT_SOURCE=$(findmnt -n -o SOURCE / 2>/dev/null || echo "unknown")
+ROOT_FS="${ROOT_FS##*$'\n'}"
+ROOT_SOURCE=$(findmnt -nv -o SOURCE / 2>/dev/null || echo "unknown")
+ROOT_SOURCE="${ROOT_SOURCE##*$'\n'}"
 echo "Root filesystem type: $ROOT_FS"
 echo "Root source: $ROOT_SOURCE"
 
@@ -2519,7 +2669,9 @@ SYSTEM_TYPE="UNKNOWN"
 if [[ -d "/run/live" ]] || grep -q "boot=live" /proc/cmdline 2>/dev/null; then
     SYSTEM_TYPE="LIVE"
 else
+    # The mount in use is the LAST row of a stacked mount point.
     ROOT_FS_TYPE=$(findmnt -n -o FSTYPE / 2>/dev/null || echo "unknown")
+    ROOT_FS_TYPE="${ROOT_FS_TYPE##*$'\n'}"
     if [[ "$ROOT_FS_TYPE" == "ext4" ]] || [[ "$ROOT_FS_TYPE" == "btrfs" ]] || [[ "$ROOT_FS_TYPE" == "xfs" ]]; then
         SYSTEM_TYPE="INSTALLED"
     fi
@@ -2533,8 +2685,12 @@ NUKE_STATUS="NOT DETECTED"
 # packages too, making this disagree with the meta-summary detection.
 dpkg-query -W -f='${Status}' cryptsetup-nuke-password 2>/dev/null | grep -q '^install ok installed$' && NUKE_STATUS="PACKAGE INSTALLED"
 
+# The mount in use is the LAST row of a stacked mount point, and -v drops the "[/dir]" findmnt
+# appends to SOURCE for a btrfs subvolume or a bind mount; exact comparisons below need both.
 ROOT_FS=$(findmnt -n -o FSTYPE / 2>/dev/null || echo "unknown")
-ROOT_SOURCE=$(findmnt -n -o SOURCE / 2>/dev/null || echo "unknown")
+ROOT_FS="${ROOT_FS##*$'\n'}"
+ROOT_SOURCE=$(findmnt -nv -o SOURCE / 2>/dev/null || echo "unknown")
+ROOT_SOURCE="${ROOT_SOURCE##*$'\n'}"
 
 echo "KODACHI_VERSION=${KODACHI_VERSION}"
 # Extract build info from build-meta.json (re-detect in subshell)
@@ -2600,8 +2756,12 @@ safe_exec "$COLLECTION_DIR/01-system-boot/systemd-analyze-plot.svg" \
     "systemd-analyze plot"
 safe_exec "$COLLECTION_DIR/01-system-boot/systemd-cgls.txt" \
     "systemd-cgls --no-pager"
+# B8 (round 11): the old filter anchored "Unit" at column 0, but the dump
+# prints every unit header as "-> Unit NAME:", so the file was always empty.
+# systemd 253 and later dump only the named units; older ones fall back to
+# the unit header lines of the full dump.
 safe_exec "$COLLECTION_DIR/01-system-boot/systemd-analyze-dump-targets.txt" \
-    "systemd-analyze dump | grep -E '^(Unit|.*: dependency|Following|swap|local-fs|cryptsetup|graphical-session)' | head -200"
+    "_kd=\$(systemd-analyze dump swap.target local-fs.target cryptsetup.target graphical-session.target '*.swap' 'systemd-cryptsetup@*.service' 2>/dev/null); if [ -n \"\$_kd\" ]; then printf '%s\\n' \"\$_kd\" | head -400; else systemd-analyze dump 2>/dev/null | grep -E '^(-> )?Unit ' | head -200; fi"
 safe_exec "$COLLECTION_DIR/01-system-boot/systemd-analyze-units-graphical.txt" \
     "systemd-analyze critical-chain graphical.target"
 safe_exec "$COLLECTION_DIR/01-system-boot/systemd-analyze-units-multi-user.txt" \
@@ -2699,7 +2859,8 @@ fi
 
 # S.M.A.R.T disk health
 if command -v smartctl &> /dev/null; then
-    safe_exec "$COLLECTION_DIR/02-hardware-drivers/smart-health.txt" "smartctl -H /dev/sda 2>/dev/null || smartctl -H /dev/nvme0n1 2>/dev/null || echo 'No SMART-capable device'"
+    # B8 (round 11): probe the disks that exist, not a fixed /dev/sda first.
+    safe_exec "$COLLECTION_DIR/02-hardware-drivers/smart-health.txt" "_kd=\$(lsblk -dno NAME,TYPE 2>/dev/null | awk '\$2==\"disk\" && \$1 !~ /^(loop|zram|ram|sr)/ {print \$1}'); [ -n \"\$_kd\" ] || echo 'No disk found by lsblk'; for _d in \$_kd; do echo \"=== /dev/\$_d\"; smartctl -H /dev/\$_d 2>&1 | grep -vE '^(smartctl |Copyright|$)'; done"
 fi
 
 # Virtualization detection
@@ -3248,6 +3409,16 @@ fi
 # Kodachi SOC host-security telemetry snapshot (read-only collector)
 if command -v kodachi-soc &> /dev/null; then
     safe_exec "$COLLECTION_DIR/06-kodachi/kodachi-soc-snapshot.json" "kodachi-soc snapshot --json 2>/dev/null"
+    # Round 11i (2026-10-04): WHY the SOC watcher is "NOT AVAILABLE HERE". A user's laptop
+    # went from qualified to target_unqualified overnight and the bundle could not say what
+    # changed. The first file is the signed decision exactly as the dashboard copy tells users
+    # to run it (and the shape an operator turns into a registry row); the second is the
+    # read-only explanation: the nearest signed row and every differing field with both
+    # values, plus the host's masked boot command line. The binary itself never prints the raw
+    # command line or its per-install hash; the redaction pass still runs over both files.
+    # A binary older than --explain fails with a parse error recorded as [EXIT CODE: n].
+    safe_exec "$COLLECTION_DIR/06-kodachi/kodachi-soc-qualification.json" "kodachi-soc exposure qualification --json 2>/dev/null"
+    safe_exec "$COLLECTION_DIR/06-kodachi/kodachi-soc-qualification-explain.json" "kodachi-soc exposure qualification --explain --json-pretty 2>/dev/null"
 fi
 
 # ============================================================================
@@ -3443,8 +3614,11 @@ for calamares_dir in "${CALAMARES_DIRS[@]}"; do
         echo "Found: $calamares_dir" >> "$COLLECTION_DIR/07-installation-packages/calamares/sources.txt"
     fi
 done
-# Single-file Calamares log
-safe_copy "/var/log/Calamares.log" "$COLLECTION_DIR/07-installation-packages"
+# Single-file Calamares log. B8 (round 11): Kodachi Calamares preserves its
+# session log as /var/log/installer/calamares-session.log (preservefiles.conf),
+# copied with debian-installer/ below; /var/log/Calamares.log is only probed
+# when it exists, so a bundle no longer carries a Calamares.log.missing marker.
+[[ -f /var/log/Calamares.log ]] && safe_copy "/var/log/Calamares.log" "$COLLECTION_DIR/07-installation-packages"
 
 # Debian installer logs (d-i)
 if [[ -d "/var/log/installer" ]]; then
@@ -3653,7 +3827,7 @@ safe_exec "$COLLECTION_DIR/08-display-desktop/user-session/loginctl-session-stat
 # in order so the bundle keeps producing useful login history regardless
 # of which tools the host actually ships.
 safe_exec "$COLLECTION_DIR/08-display-desktop/user-session/last-logins.txt" \
-    "if command -v last >/dev/null 2>&1; then last -n 30; \
+    "if command -v last >/dev/null 2>&1; then last -w -n 30 2>/dev/null || last -n 30; \
      elif command -v wtmpdb >/dev/null 2>&1; then wtmpdb last 2>/dev/null | head -30; \
      else journalctl _COMM=systemd-logind --no-pager -n 100 2>/dev/null | grep -E 'New session|Removed session' | tail -30; fi"
 safe_exec "$COLLECTION_DIR/08-display-desktop/user-session/lastlog.txt" \
@@ -3738,7 +3912,15 @@ for d in /etc/xdg/autostart "${REAL_HOME}/.config/autostart"; do
         if [[ "$d" == /etc/* ]]; then
             cp -r "$d"/*.desktop "$COLLECTION_DIR/08-display-desktop/autostart/${rel}/" 2>/dev/null || true
         else
-            sudo -u "$REAL_USER" sh -c "cp -r '$d'/*.desktop '$COLLECTION_DIR/08-display-desktop/autostart/${rel}/'" 2>/dev/null || true
+            # B8 (round 11): the copy used to run AS the user, writing into the
+            # root-only collection directory, so it failed under 2>/dev/null
+            # and the user autostart folder of every bundle was empty. Read as
+            # the user, write as root (the same split as the config copy above).
+            for f in "$d"/*.desktop; do
+                [[ -f "$f" ]] || continue
+                sudo -u "$REAL_USER" cat "$f" \
+                    > "$COLLECTION_DIR/08-display-desktop/autostart/${rel}/$(basename "$f")" 2>/dev/null || true
+            done
         fi
     fi
 done
@@ -3834,7 +4016,6 @@ for src in \
     /etc/X11/Xsession \
     /etc/X11/Xsession.options \
     /usr/bin/startxfce4 \
-    /usr/bin/xfce4-session \
     /etc/xdg/xfce4/xinitrc \
     /etc/xdg/xfce4-session/xfce4-session.rc \
     /etc/xdg/xfce4/defaults.list \
@@ -3843,8 +4024,12 @@ for src in \
         dst="$COLLECTION_DIR/08-display-desktop/xfce4-startup-chain/$(basename "$src")"
         if [[ -d "$src" ]]; then
             cp -rL "$src" "$dst" 2>/dev/null || true
-        else
+        elif kdc_is_text_file "$src"; then
             cp -L "$src" "$dst" 2>/dev/null || true
+        else
+            # B8 (round 11): a binary (the 272 KB xfce4-session ELF was copied
+            # into every bundle) is described in INSPECT.txt, never copied.
+            echo "$src: binary, not copied (see INSPECT.txt)" >> "$COLLECTION_DIR/08-display-desktop/xfce4-startup-chain/SKIPPED.txt"
         fi
     fi
 done
@@ -3916,19 +4101,37 @@ done
     done
 } > "$COLLECTION_DIR/08-display-desktop/masked-services.txt" 2>/dev/null
 
+# B8 (round 11): the method line, from a log root (a parameter so the
+# regression test can point it at a fixture tree). Kodachi Calamares writes
+# installer/calamares-session.log INTO the d-i log directory, so testing for
+# installer/ first reported "DEBIAN-INSTALLER (d-i)" for every Calamares install.
+kdc_install_method_line() {
+    local root="$1"
+    if [[ -f "$root/installer/calamares-session.log" ]] || [[ -f "$root/Calamares.log" ]]; then
+        echo "Method: CALAMARES"
+    elif [[ -d "$root/installer" ]]; then
+        echo "Method: DEBIAN-INSTALLER (d-i)"
+    else
+        echo "Method: UNKNOWN (no Calamares session log, no installer log directory)"
+    fi
+}
+
 # v1.5: install-method detection, Calamares vs debian-installer. Critical
 # for triaging hook bugs because our 9999-zzz install hook runs in the
 # chroot at ISO build time (always present in squashfs), but post-install
 # regenerations can vary by installer flavour.
 {
     echo "=== Install method detection ==="
-    if [[ -f /var/log/Calamares.log ]]; then
-        echo "Method: CALAMARES"
+    kdc_install_method_line /var/log
+    if [[ -f /var/log/installer/calamares-session.log ]]; then
+        echo "  /var/log/installer/calamares-session.log: $(stat -c '%y' /var/log/installer/calamares-session.log 2>/dev/null)"
+        echo "  Last 30 lines:"
+        tail -30 /var/log/installer/calamares-session.log 2>/dev/null | sed 's/^/    /'
+    elif [[ -f /var/log/Calamares.log ]]; then
         echo "  /var/log/Calamares.log: $(stat -c '%y' /var/log/Calamares.log 2>/dev/null)"
         echo "  Last 30 lines:"
         tail -30 /var/log/Calamares.log 2>/dev/null | sed 's/^/    /'
     elif [[ -d /var/log/installer ]]; then
-        echo "Method: DEBIAN-INSTALLER (d-i)"
         echo "  /var/log/installer/ contents:"
         ls -la /var/log/installer/ 2>/dev/null | sed 's/^/    /'
         if [[ -f /var/log/installer/syslog ]]; then
@@ -3936,8 +4139,6 @@ done
             echo "  /var/log/installer/syslog last 30 lines:"
             tail -30 /var/log/installer/syslog 2>/dev/null | sed 's/^/    /'
         fi
-    else
-        echo "Method: UNKNOWN (no Calamares.log, no /var/log/installer)"
     fi
     echo ""
     # v1.8: kodachi-finish-install never had a log of that name. The d-i
@@ -3954,7 +4155,8 @@ done
         fi
         echo ""
     done
-    if [[ ! -f /var/log/kodachi-di-install.log ]] && [[ ! -f /var/log/Calamares.log ]]; then
+    if [[ ! -f /var/log/kodachi-di-install.log ]] && [[ ! -f /var/log/Calamares.log ]] \
+        && [[ ! -f /var/log/installer/calamares-session.log ]]; then
         echo "  No Kodachi installer log at all: either a live session or kodachi-finish-install did not run."
         echo ""
     fi
@@ -4120,8 +4322,10 @@ mkdir -p "$COLLECTION_DIR/10-security-permissions"
 
 safe_exec "$COLLECTION_DIR/10-security-permissions/id.txt" "id"
 safe_exec "$COLLECTION_DIR/10-security-permissions/who.txt" "who"
-safe_exec "$COLLECTION_DIR/10-security-permissions/w.txt" "w"
-safe_exec "$COLLECTION_DIR/10-security-permissions/last.txt" "if command -v last >/dev/null 2>&1; then last -20; elif command -v wtmpdb >/dev/null 2>&1; then wtmpdb last 2>/dev/null | head -20; else echo 'last/wtmpdb unavailable (no wtmp login history on this system)'; fi"
+# B1 (round 11): full-width user columns, so the account-name redaction sees
+# the whole name (w and last cut it to 8 characters with no marker otherwise).
+safe_exec "$COLLECTION_DIR/10-security-permissions/w.txt" "PROCPS_USERLEN=32 w"
+safe_exec "$COLLECTION_DIR/10-security-permissions/last.txt" "if command -v last >/dev/null 2>&1; then last -w -20 2>/dev/null || last -20; elif command -v wtmpdb >/dev/null 2>&1; then wtmpdb last 2>/dev/null | head -20; else echo 'last/wtmpdb unavailable (no wtmp login history on this system)'; fi"
 
 # SELinux/AppArmor
 safe_exec "$COLLECTION_DIR/10-security-permissions/getenforce.txt" "getenforce"
@@ -4317,6 +4521,7 @@ write_timing_files() {
     echo "Invocation:          ${INVOKED_AS} ${INVOKED_ARGS}"
     echo "Bash:                ${BASH_VERSION}"
     echo "Ran as uid:          $(id -u) (real user ${REAL_USER}, uid ${REAL_UID:-unknown})"
+    echo "Audit trail:         ${AUDIT_SELF_NOTE}"
     echo "Started (UTC):       ${RUN_STARTED}"
     echo "Collection done:     $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     echo "Elapsed so far:      $(( $(date +%s) - RUN_T0 ))s"

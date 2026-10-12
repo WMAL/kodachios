@@ -440,6 +440,60 @@ detect_gui_environment() {
     return 1
 }
 
+# >>> STAGING-OWNERSHIP BEGIN
+# Round 11 (2026-10-03, a user on a clean <lab-host> ISO install). UPDATE on a completed, root-owned
+# install hands /opt/kodachi, /opt/kodachi/dashboard and /opt/kodachi/dashboard/hooks to the
+# invoking user so the download can be staged as that user; install_production_auth_trust hands
+# them back to root at the very end. Two gaps left that user's machine broken:
+#   1. the root permission-guard daemon re-roots hooks (its protected watch root) within about a
+#      minute of the staging chown, and the binary-pack freshness fetch sits in between, so on a
+#      slow route the write check below failed and the script exited;
+#   2. nothing gave the two parents back on that exit, or on any other early exit or Ctrl-C.
+# The dashboard and online-auth then refuse the whole trust chain ("/opt/kodachi is no longer
+# owned by root") and no login works. So: once staging has re-owned the ancestors, the EXIT trap
+# puts root:root 0755 back on all three unless they are root already (exactly what
+# install_production_auth_trust ends with, so a completed run is unchanged), and a hooks
+# directory the daemon re-rooted is staged again instead of aborting the run.
+KODACHI_STAGED_ANCESTORS=false
+KODACHI_STAGING_ROOT="/opt/kodachi"
+TEMP_DIR=""
+
+stage_hooks_tree_for_user() {
+    local root="$KODACHI_STAGING_ROOT"
+    sudo install -d -o "$EUID" -g "$(/usr/bin/id -g)" -m 0755 \
+        "$root" "$root/dashboard" "$root/dashboard/hooks" || return 1
+    KODACHI_STAGED_ANCESTORS=true
+    # bash runs an EXIT trap on INT and TERM too (measured on 5.2.37), so Ctrl-C restores.
+    trap restore_staged_ancestors_on_exit EXIT
+}
+
+restore_staged_ancestors_on_exit() {
+    local rc=$? root="$KODACHI_STAGING_ROOT" d owned_by_root=true
+    # Ownership FIRST, and nothing here may fail unguarded: the script runs under
+    # `set -euo pipefail`, and a failing command inside an EXIT trap ends the trap (measured on
+    # bash 5.2.37), so a TEMP_DIR delete that failed used to skip the restore (inspector delta-9).
+    if [[ "$KODACHI_STAGED_ANCESTORS" == "true" ]]; then
+        for d in "$root" "$root/dashboard" "$root/dashboard/hooks"; do
+            if [[ -d "$d" ]] && [[ "$(stat -c '%u:%g' -- "$d" 2>/dev/null)" != "0:0" ]]; then
+                owned_by_root=false
+            fi
+        done
+        if [[ "$owned_by_root" != "true" ]]; then
+            if sudo -n install -d -o root -g root -m 0755 "$root" "$root/dashboard" "$root/dashboard/hooks" 2>/dev/null \
+                || sudo install -d -o root -g root -m 0755 "$root" "$root/dashboard" "$root/dashboard/hooks"; then
+                echo "Restored root ownership of $root, $root/dashboard and $root/dashboard/hooks" >&2
+            else
+                echo "WARNING: could not restore root ownership; run: sudo chown root:root $root $root/dashboard $root/dashboard/hooks" >&2
+            fi
+        fi
+    fi
+    if [[ -n "${TEMP_DIR:-}" ]]; then
+        rm -rf "$TEMP_DIR" || true
+    fi
+    return "$rc"
+}
+# <<< STAGING-OWNERSHIP END
+
 # Parse command line arguments
 INSTALL_PATH=""
 SKIP_PATH_UPDATE=false
@@ -495,6 +549,30 @@ echo -e "${CYAN}║        Default: /opt/kodachi/                ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}"
 echo ""
 
+# Round 11i (Hunter, 2026-10-04): a system whose Kodachi binaries come from the apt packages must be
+# updated with apt. This installer could never succeed there (permission-guard hands hooks/ back to root
+# between staging and the write check), it failed with a bare "Cannot write", and a user who ran it
+# instead of apt ended up with build-11 binaries mixed into a packaged system. Stop before any staging
+# or sudo, and say what to run. A custom --path install is not affected.
+if [[ -z "$INSTALL_PATH" ]] && command -v dpkg-query >/dev/null 2>&1 \
+   && dpkg-query -W -f='${Status}' kodachi-hooks-core 2>/dev/null | grep -q 'install ok installed'; then
+    print_error "This system's Kodachi binaries are installed and updated by apt (package kodachi-hooks-core)."
+    print_info "Update it with: sudo apt update && sudo apt full-upgrade"
+    print_info "This installer is for systems without the Kodachi apt packages; running it here would mix two install methods."
+    # The desktop's "Binary install" window runs /usr/local/bin/kodachi-binary-install, which downloads
+    # this script. The wrapper an installed ISO already carries ends under `set -e` the moment this exits
+    # non-zero, and its terminal closes before the line above can be read; apt never replaces that wrapper
+    # (no package owns it). Hold the window here for that old wrapper only: the fixed wrapper sets
+    # KODACHI_INSTALL_WRAPPER_HOLDS=1 and waits itself, and a manual run has no such parent.
+    if [[ -z "${KODACHI_INSTALL_WRAPPER_HOLDS:-}" ]] \
+       && tr '\0' ' ' < "/proc/$PPID/cmdline" 2>/dev/null | grep -q '/usr/local/bin/kodachi-binary-install\( \|$\)'; then
+        echo ""
+        echo "(This window stays open until you press Enter.)"
+        read -r -p "Press Enter to close..." || true
+    fi
+    exit 3
+fi
+
 # Set default install path if not specified
 if [[ -z "$INSTALL_PATH" ]]; then
     INSTALL_PATH="/opt/kodachi/dashboard/hooks"
@@ -504,8 +582,7 @@ if [[ -z "$INSTALL_PATH" ]]; then
     # binaries without recursively changing ownership of runtime state.
     if [[ ! -d "/opt/kodachi" ]]; then
         print_info "Creating /opt/kodachi/ (requires sudo)..."
-        if sudo install -d -o "$EUID" -g "$(/usr/bin/id -g)" -m 0755 \
-            "/opt/kodachi" "/opt/kodachi/dashboard" "/opt/kodachi/dashboard/hooks"; then
+        if stage_hooks_tree_for_user; then
             print_success "Created /opt/kodachi/ staging tree for $(whoami)"
         else
             print_warning "Could not create /opt/kodachi/, falling back to home directory"
@@ -515,8 +592,7 @@ if [[ -z "$INSTALL_PATH" ]]; then
         # A completed install is root-owned. Re-open only the three staging
         # ancestors, never the complete /opt/kodachi subtree.
         print_info "Preparing /opt/kodachi/ staging ownership (requires sudo)..."
-        if sudo install -d -o "$EUID" -g "$(/usr/bin/id -g)" -m 0755 \
-            "/opt/kodachi" "/opt/kodachi/dashboard" "/opt/kodachi/dashboard/hooks"; then
+        if stage_hooks_tree_for_user; then
             print_success "Prepared /opt/kodachi/ staging tree"
         else
             print_warning "Cannot write to /opt/kodachi/, falling back to home directory"
@@ -564,6 +640,12 @@ fi
 echo ""
 
 # Check if we can write to the installation path
+if [[ -e "$INSTALL_PATH" ]] && [[ ! -w "$INSTALL_PATH" ]] && [[ "$KODACHI_STAGED_ANCESTORS" == "true" ]]; then
+    # The root permission-guard daemon handed hooks back to root after staging (it is stopped
+    # before the download, below). Stage it again rather than abort.
+    print_warning "$INSTALL_PATH was handed back to root while preparing (permission-guard protects it); preparing it again"
+    stage_hooks_tree_for_user || true
+fi
 if [[ -e "$INSTALL_PATH" ]] && [[ ! -w "$INSTALL_PATH" ]]; then
     print_error "Cannot write to $INSTALL_PATH"
     print_info "Please choose a different path or fix permissions"
@@ -572,7 +654,7 @@ fi
 
 # Create temporary directory
 TEMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TEMP_DIR"' EXIT
+trap restore_staged_ancestors_on_exit EXIT
 
 # Function to download with retry, resume support, and stall detection
 download_with_retry() {
@@ -986,7 +1068,7 @@ install_production_auth_trust() {
     # fresh ISO shipped results/signatures with 60 entries and auth-trust/signatures with
     # 58, and vm-hooks-trust-gate.sh V3 (bidirectional store parity for the stamp) failed
     # on host-exposure-defaults.json_v<stamp>.sig before any deploy had touched the box.
-    # Measured on the <lab-host> live ISO at <lab-host> by <agent> on
+    # Measured on the <lab-host> live ISO on a test VM by <agent> on
     # 2026-09-05, reported for the ISO/signer owner and adopted here on 2026-09-06.
     # build-apt-channels.sh already copies the whole results store into auth-trust for
     # the apt trees, so this only brings the ISO path to the same layout. The policy is
@@ -1768,6 +1850,11 @@ prepare_hooks_for_binary_replace() {
         if [[ "$pg_restarted" == "true" ]]; then
             print_warning "permission-guard daemon appears to have restarted during download"
             stop_permission_guard_if_running
+            # It may have handed hooks back to root meanwhile; stage it again before the writes.
+            if [[ "$KODACHI_STAGED_ANCESTORS" == "true" ]] && [[ ! -w "$INSTALL_PATH" ]]; then
+                print_warning "$INSTALL_PATH was handed back to root while permission-guard ran again; preparing it again"
+                stage_hooks_tree_for_user || true
+            fi
         fi
     fi
     # Then drain all running processes using hooks path
@@ -1778,6 +1865,11 @@ prepare_hooks_for_binary_replace() {
 
 # Early permission-guard check BEFORE downloading (avoid wasting download time)
 stop_permission_guard_if_running
+# Until it stopped, the daemon could hand hooks back to root after staging; stage it again.
+if [[ "$KODACHI_STAGED_ANCESTORS" == "true" ]] && [[ ! -w "$INSTALL_PATH" ]]; then
+    print_warning "$INSTALL_PATH was handed back to root before permission-guard stopped; preparing it again"
+    stage_hooks_tree_for_user || true
+fi
 
 echo ""
 print_highlight "======= Downloading Kodachi Binaries ======="
@@ -2517,18 +2609,50 @@ mkdir -p "\$LOG_DIR"
 export DISPLAY="\${DISPLAY:-:0}"
 export XAUTHORITY="\${XAUTHORITY:-\$HOME/.Xauthority}"
 
+# Round 11i: the same three answers as the shipped conky-watchdog.sh. 0 = this session can draw
+# (xdpyinfo answers); 1 = the display is gone (stop); 2 = an X server this session cannot use, the
+# login greeter's after the session ended (wait: every conky start there fails authorization and
+# segfaults). Without xdpyinfo the socket alone decides.
+display_alive() {
+    local display_num="\${DISPLAY#:}"
+    display_num="\${display_num%%.*}"
+    local socket_dir="\${KODACHI_X11_SOCKET_DIR:-/tmp/.X11-unix}"
+    if command -v xdpyinfo >/dev/null 2>&1; then
+        xdpyinfo -display "\$DISPLAY" >/dev/null 2>&1 && return 0
+        [[ -S "\$socket_dir/X\${display_num}" ]] && return 2
+        return 1
+    fi
+    [[ -S "\$socket_dir/X\${display_num}" ]] && return 0
+    return 1
+}
+
 count_kodachi_conky() { pgrep -af "conky .*kodachi/conky/configs/conkyrc-.*\\\\.conf" 2>/dev/null | wc -l || true; }
 restart_conky() { "$launcher" --restart >> "\$LOG_FILE" 2>&1 || true; }
-
-current_count="\$(count_kodachi_conky)"
-if (( current_count < MIN_PANELS )) || (( current_count > MAX_PANELS )); then
-    restart_conky
-fi
 
 missing_streak=0
 last_restart_ts=0
 
+initial_display=0
+display_alive || initial_display=\$?
+current_count="\$(count_kodachi_conky)"
+if (( initial_display == 0 )) && { (( current_count < MIN_PANELS )) || (( current_count > MAX_PANELS )); }; then
+    restart_conky
+    # The startup repair starts the cooldown too, as in conky-watchdog.sh: without it the loop
+    # relaunched again after two misses while the first launch was still bringing panels up.
+    last_restart_ts=\$(date +%s)
+fi
+
 while true; do
+    display_state=0
+    display_alive || display_state=\$?
+    if (( display_state == 1 )); then
+        pkill -9 -x conky >/dev/null 2>&1 || true
+        break
+    fi
+    if (( display_state == 2 )); then
+        sleep "\$CHECK_INTERVAL"
+        continue
+    fi
     current_count="\$(count_kodachi_conky)"
     if (( current_count < MIN_PANELS )) || (( current_count > MAX_PANELS )); then
         missing_streak=\$((missing_streak + 1))

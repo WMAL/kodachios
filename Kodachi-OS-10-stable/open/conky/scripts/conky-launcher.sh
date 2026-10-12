@@ -14,7 +14,7 @@
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-02-05
 #
 # Description:
@@ -1005,6 +1005,40 @@ launch_all_panels() {
     return 0
 }
 
+# ===== CLICK-THROUGH =====
+# The panels are normal, undecorated windows kept below everything else, and conky 1.22 leaves their
+# X input region covering the whole panel, so a desktop icon under a panel could not be clicked
+# (user report, 2026-10-06). conky-clickthrough.py keeps the input region of every conky window empty:
+# clicks reach the desktop, and nothing the panels show changes. It keeps watching, because conky gives
+# a window a full region again when it re-initialises it (a config reload), and it costs nothing while
+# idle: it sleeps on the X connection. One watcher per user and display; it exits when X goes away or
+# when no panel has existed for 30 seconds. Run by python3 explicitly, so it needs no exec bit.
+# It must hold NONE of the launcher's descriptors: FD 8 is the launcher lock (as for the panels), and an
+# inherited stdout or stderr pipe would keep a caller that reads the launcher's output to EOF
+# (health-control conky-enable runs `launcher --enable` with .output()) waiting as long as it runs.
+apply_clickthrough() {
+    local conky_dir="$1"
+    local helper="$conky_dir/scripts/conky-clickthrough.py"
+    local log_file="/dev/null"
+    local runtime_root
+
+    if [[ ! -f "$helper" ]]; then
+        log_warn "Click-through helper not found: $helper (panels stay clickable)"
+        return 0
+    fi
+    if ! command -v python3 &>/dev/null; then
+        log_warn "python3 not found (panels stay clickable)"
+        return 0
+    fi
+    runtime_root="$(get_runtime_root)"
+    if mkdir -p "$runtime_root" 2>/dev/null && [[ -w "$runtime_root" ]]; then
+        log_file="$runtime_root/clickthrough.log"
+    fi
+    python3 "$helper" --linger 30 </dev/null >/dev/null 2>>"$log_file" 8>&- &
+    log_info "Click-through watcher started for the conky panels (log: $log_file)"
+    return 0
+}
+
 # ===== USAGE =====
 show_usage() {
     cat <<EOF
@@ -1176,6 +1210,9 @@ main() {
             launch_panel "$logo_config"
         fi
     fi
+
+    # After every panel (the logo included) is started, so one helper run covers them all.
+    apply_clickthrough "$conky_dir"
 
     # Safe enable path: once panels are running, ensure watchdog is active.
     if [[ "$do_enable" == "true" ]]; then

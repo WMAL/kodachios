@@ -600,7 +600,7 @@ ICON_ROOT = os.environ.get("KODACHI_ICON_DIR", "/usr/share/kodachi/dock/icons")
 # the legacy WM_HINTS pixmap, so anything that reads the modern property (a
 # pager, alt-tab on another WM, a screenshot of the task list) shows no icon
 # at all; with the 128px file first the property carries the 128x128 icon.
-# Measured 2026-09-03 on <lab-host> with xprop on a bare Gtk.Window: 26
+# Measured 2026-09-03 on a test VM with xprop on a bare Gtk.Window: 26
 # bytes ("not found") for 256, a populated "Icon (128 x 128)" for 128. The
 # GTK 4 status window had exported a full icon, so moving it onto this shell
 # would have lost that without this swap. The likely cause is GDK's per-window
@@ -677,7 +677,7 @@ COMPACT_TEXT_CLASSES = frozenset(("hdr-sub", "section-note", "row-note"))
 # window up to it, so a long runtime value does not truncate: it makes the
 # window wider than the screen policy allows.
 #
-# Measured 2026-08-26 on kodachi@<lab-host>, DISPLAY=:0, offscreen, one
+# Measured 2026-08-26 on a test VM, DISPLAY=:0, offscreen, one
 # process, same 765px text delta on every arm. "SHORT" is `apt update`, "LONG"
 # is a realistic `sudo apt-get install -y ...` line:
 #
@@ -726,7 +726,7 @@ ELLIPSIZE_TOOLTIP_CLASSES = frozenset(("cmd", "result-cmd", "result-title"))
 # with two thirds of the strip empty beside them, and why he could not read the
 # error he was asking about.
 #
-# MEASURED 2026-08-30 on kodachi@<lab-host>, DISPLAY=:0, offscreen, real
+# MEASURED 2026-08-30 on a test VM, DISPLAY=:0, offscreen, real
 # `state_fact()` labels packed in a REAL strip with this file's own CSS, at
 # window widths 944, 1366 and 3390. With 1.3px of spacing, 21 of 21 label
 # renders came back `is_ellipsized() == True`; with none, 0 of 21 did. Both
@@ -969,7 +969,7 @@ def state_fact(name, value, tone="off"):
     # a flat hbox of such labels, so the window's minimum is the sum of whatever
     # the machine happens to have to say.
     #
-    # MEASURED 2026-08-26 on <lab-host> (real seat0 :0), repo manager, CSS
+    # MEASURED 2026-08-26 on a test VM (real seat0 :0), repo manager, CSS
     # installed, async workers settled, tree shell seeded into sys.modules:
     #     without ellipsize   as the box is 951, +3 security updates 1022,
     #                         +4 invalid source rows 1165, both 1236
@@ -1251,7 +1251,7 @@ class Window(Gtk.Window):
     # ("a LONG nav cannot set the window's minimum height") and the identical
     # reasoning was never applied to WIDTH.
     #
-    # MEASURED, all 25 windows, <lab-host>, DISPLAY=:0, by building each
+    # MEASURED, all 25 windows, a test VM, DISPLAY=:0, by building each
     # one through the product's own choke point and reading
     # get_preferred_width() off the toplevel. The rail renders between 184 and
     # 284 against a declared 184, i.e. up to 100px over, which is the shape

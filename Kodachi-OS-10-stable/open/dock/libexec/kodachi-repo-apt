@@ -665,9 +665,21 @@ def apt(*args):
     than a typical unattended-upgrades run's dpkg phase and far shorter than
     APT_WALL_SECONDS, so a genuinely stuck lock still reaches the bounded-run
     rescue above rather than hiding behind this.
+
+    `--force-confdef` and `--force-confold` (round 11, inspector row 8): a
+    package upgrade that ships a new version of a configuration file the
+    machine has changed (auditd.conf, which Kodachi's own postinst tunes, or
+    lightdm-gtk-greeter.conf) makes dpkg ASK which copy to keep. This window
+    has no terminal, so dpkg reads end of file at that prompt and the whole
+    upgrade fails half way. These two keep the machine's copy unless the
+    package's default says otherwise, which is the answer an unattended
+    upgrade must give; the new upstream version is left beside it as
+    .dpkg-dist, so nothing is lost.
     """
     return run([APT_GET, "-o", "Dpkg::Use-Pty=0", "-q",
                 "-o", "APT::Status-Fd=1",
+                "-o", "Dpkg::Options::=--force-confdef",
+                "-o", "Dpkg::Options::=--force-confold",
                 "-o", "DPkg::Lock::Timeout=%d" % DPKG_LOCK_TIMEOUT]
                + list(args))
 
@@ -832,7 +844,9 @@ def verb_fix_broken():
     machine that needs attention and must not be reported as repaired.
     """
     say("repairing an interrupted package transaction")
-    first = run([DPKG, "--configure", "-a"])
+    # The same two conffile answers as apt() above: a configure interrupted at
+    # a conffile question would otherwise ask it again here, with no terminal.
+    first = run([DPKG, "--force-confdef", "--force-confold", "--configure", "-a"])
     if first == 0:
         say("dpkg --configure -a completed")
     else:
@@ -1154,7 +1168,7 @@ def _deb822_stanzas(text):
 
     ONLY A TRULY EMPTY LINE SEPARATES. A line holding a space, a tab, or three
     spaces DOES NOT, and this is not a style choice: it is what apt does, asked
-    directly rather than assumed. Measured on <lab-host> with apt itself as
+    directly rather than assumed. Measured on a test VM with apt itself as
     the oracle, one kodachi stanza and one deb.debian.org stanza in a single
     file, counting the URIs apt says it would fetch:
 
@@ -1620,7 +1634,7 @@ def dev_index_residue():
     is load-bearing: without it the prefix `kodachi.cloud_repo` matches STABLE
     too and clearing dev credentials would delete the stable index, which is
     the "my normalizer deleted more than it was aiming at" class. Measured on
-    <lab-host> the four dev entries are:
+    a test VM the four dev entries are:
 
         kodachi.cloud_repo-dev_dists_dev_InRelease
         kodachi.cloud_repo-dev_dists_dev_main_binary-amd64_Packages

@@ -23,7 +23,7 @@ readonly PERSISTENT_NAME="kodachi-workbench"
 # process with no handler is exempt from the default action WHEN IT IS PID 1. So
 # `podman stop` waited its full 10 seconds and then resorted to SIGKILL on every
 # stop-all and every confirmed reset-workbench, and the container always died
-# Exited (137). Measured on the shipped image, real store, <lab-host>:
+# Exited (137). Measured on the shipped image, real store, a test VM:
 #     sleep infinity                       stop=10.32s  exit=137
 #     this trap-based idle loop            stop= 0.44s  exit=0
 # `--init` is NOT the fix here even though it is the usual one: catatonit is absent
@@ -609,7 +609,7 @@ confirm_reset() {
     if [[ -n "${DISPLAY:-}" && -x "$ZENITY_BIN" ]]; then
         # --default-cancel BECAUSE THE FOCUSED BUTTON IS THE ONE Return ACTIVATES.
         # Without it zenity focuses the OK button, so pressing Return on a destructive
-        # confirmation DESTROYS. Measured on <lab-host>: Return removed the
+        # confirmation DESTROYS. Measured on a test VM: Return removed the
         # workbench with no further input. The safe answer is now the default one.
         #
         # 2>/dev/null BECAUSE THIS CELL RUNS UNDER `xfce4-terminal --hold`, so whatever

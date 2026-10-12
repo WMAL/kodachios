@@ -41,6 +41,16 @@ readonly LAYOUT_FILE="${DOCK_LAYOUT:-${DOCK_SHARE_DIR}/dock-layout.tsv}"
 readonly ACTIONS_FILE="${DOCK_SIDECAR:-${ROFI_LIB_DIR}/dock-actions.tsv}"
 readonly ACTION_RUNNER="/usr/local/libexec/kodachi/kodachi-dock-action"
 readonly COMMAND_WINDOW="/usr/local/libexec/kodachi/kodachi-command-window"
+# EVERY APPLICATION CELL STARTS ITS PROGRAM IN ITS OWN SYSTEMD SCOPE (round 11 B10).
+# cairo-dock runs as kodachi-dock.service, and whatever a click starts used to land in
+# that service's cgroup: the dock's journal billed it for Discord and Proton Mail ("2G
+# memory peak"), logged "remains running after unit stopped" for every app at each
+# restart, and a VPN started from a dock action (runner, sudo routing-switch, openvpn
+# --daemon) shared the dock's cgroup inside user@.service. A transient app scope gives
+# each click its own cgroup under app.slice. routing-switch moves its tunnel daemons to
+# system scopes on its own side, so a logout cannot kill them while the kill switch
+# stays up. `export` strips this prefix again, so the TSVs never carry it.
+readonly SCOPE_LAUNCH_PREFIX="systemd-run --user --scope --collect --quiet --"
 readonly CAIRO_VERSION="3.5.1"
 
 # A dock-actions row carrying this in its Category column is a group divider, not
@@ -60,7 +70,7 @@ readonly LAUNCH_CATEGORY="_LAUNCH_"
 # `sudo kodachi-dock-build build` writes a complete, correct, byte-reproducible
 # dock into /root/.config/cairo-dock/ and reports success, while the dock the
 # user is actually looking at, owned by their own session, never changes. Every
-# gate passes. Measured on <lab-host>, 2026-08-19: 94 launcher files
+# gate passes. Measured on a test VM, 2026-08-19: 94 launcher files
 # written under /root and a live dock still showing the previous 15, with
 # `verify` reporting "two runs produced 94 identical file(s)" about a tree
 # nothing renders. That is the silent-wrong-answer class, and it is easy to walk
@@ -201,7 +211,7 @@ EOF
 # The shape matches /usr/share/cairo-dock/separator.desktop from cairo-dock 3.5.1.
 #
 # Separators are how a sub-dock gets SUB-GROUPS. Nesting a sub-dock inside another
-# sub-dock was measured on cairo-dock 3.5.1 (VM <lab-host>, 2026-08-17) and
+# sub-dock was measured on cairo-dock 3.5.1 (VM, 2026-08-17) and
 # does NOT work: a Container whose own Container names a sub-dock is accepted, but
 # every launcher pointing at that nested container silently falls back onto the
 # MAIN dock, so the main dock quietly fills with cells nobody put there. Grouping
@@ -252,6 +262,27 @@ Order=${order}
 Icon Type=2
 Type=Separator
 EOF
+}
+
+# The Exec a launcher carries for a cell whose command is $1: the command inside its
+# own scope when systemd-run exists on this machine, the bare command otherwise (a
+# prefix naming a missing program would make every cell do nothing when clicked).
+scope_exec_line() {
+    if command -v systemd-run >/dev/null 2>&1; then
+        printf '%s %s' "$SCOPE_LAUNCH_PREFIX" "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
+
+# The inverse, for `export`: the command a launcher runs, without the scope prefix.
+# A launcher written before round 11 (no prefix) comes back unchanged.
+unscope_exec_line() {
+    local line="$1"
+    if [[ "$line" == "$SCOPE_LAUNCH_PREFIX "* ]]; then
+        line="${line#"$SCOPE_LAUNCH_PREFIX "}"
+    fi
+    printf '%s' "$line"
 }
 
 emit_launcher() {
@@ -327,7 +358,7 @@ generate_into() {
     # had already claimed, and that made one whole class of layout impossible to
     # express: any arrangement with a container BEFORE a main-dock cell.
     #
-    # Measured on <lab-host> with the operator's own arrangement (eight
+    # Measured on a test VM with the operator's own arrangement (eight
     # containers dragged to the front of the dock, the eleven command windows
     # pushed behind them): `export` captured it faithfully, `build` regenerated
     # it with all eight containers wedged between Identity and Devices, because
@@ -442,6 +473,8 @@ generate_into() {
         else
             prefix="$(printf '%03d' "$index")-$(slugify "$sidecar_subdock")"
         fi
+
+        exec_line="$(scope_exec_line "$exec_line")"
 
         if ! emit_launcher "$sidecar_subdock" "$dock_label" "$cell_icon" \
             "$exec_line" "$index" \
@@ -721,7 +754,7 @@ verb_export() {
                 # non-idempotent by one round: pass 1 wrote `group`, build wrote
                 # the file `...-separator-group.desktop`, and pass 2 recovered
                 # the name from that filename and applied the ^ restore above,
-                # yielding `Group`. Measured on <lab-host> after the
+                # yielding `Group`. Measured on a test VM after the
                 # operator added a divider through the cairo-dock GUI: two
                 # identical exports of an unchanged dock produced different TSVs.
                 sep_name="Group"
@@ -736,6 +769,10 @@ verb_export() {
 
         local exec_line="${DESKTOP_FIELD[Exec]:-}"
         [[ -n "$exec_line" ]] || continue
+        # Read the cell's own command, not the scope wrapper `build` put around it,
+        # or every cell would export as a _LAUNCH_ of systemd-run and the next build
+        # would wrap it a second time.
+        exec_line="$(unscope_exec_line "$exec_line")"
 
         local -a parts=()
         split_exec_args "$exec_line" parts
@@ -1071,6 +1108,91 @@ validate_generated_population() {
     done < <(find "$directory" -maxdepth 1 -type f -name '*.desktop' -print0 | sort -z)
 }
 
+# Prints, one per line, every Application launcher in $1 whose single Exec line does not
+# already start through systemd-run. One awk over the whole set, so a login that has nothing
+# to migrate pays a handful of processes, not three per launcher.
+launchers_needing_scope() {
+    find "$1" -maxdepth 1 -type f -name '*.desktop' -print0 \
+        | sort -z \
+        | xargs -0 -r awk '
+            function emit() {
+                if (file != "" && apps == 1 && execs == 1 && command != "" && index(command, "systemd-run ") != 1) {
+                    print file
+                }
+            }
+            FNR == 1 { emit(); file = FILENAME; apps = 0; execs = 0; command = "" }
+            $0 == "Type=Application" { apps++ }
+            /^Exec=/ { execs++; if (execs == 1) { command = substr($0, 6) } }
+            END { emit() }
+        '
+}
+
+# ROUND 11 B10, THE DOCKS THAT ALREADY EXIST. `--if-missing` leaves a sound layout alone on
+# purpose (verb_build explains why), so a dock generated before round 11 would start every click
+# inside kodachi-dock.service for good. The unit's KillMode=process means a dock restart does not
+# kill those apps, but they stay in the dock's cgroup: the dock is billed for their memory, every
+# restart and logout logs "remains running after unit stopped" for each one, and the next start
+# finds them as left-over processes. A new ISO fixes new accounts only, so this upgrades the
+# accounts that exist.
+#
+# It changes ONE line, the Exec of each Application launcher that does not already go through
+# systemd-run, and nothing else: no launcher is added, removed, renamed or reordered, and every
+# other byte of the file is kept, so a user's own arrangement survives exactly as verb_build
+# promises. A COPY of the layout is taken first (never a move), with the same RESTORE.txt as a
+# regeneration. A second run finds nothing to change. Every step is checked, because `set -e`
+# does not apply inside a function the caller tests, and a failure must leave each launcher
+# either untouched or fully rewritten, never half written.
+migrate_launcher_scopes() {
+    local directory="$1" launcher temporary stamp target changed=0
+    local -a pending=()
+    command -v systemd-run >/dev/null 2>&1 || return 0
+    [[ -d "$directory" ]] || return 0
+    mapfile -t pending < <(launchers_needing_scope "$directory") || return 1
+    [[ "${#pending[@]}" -gt 0 ]] || return 0
+
+    # WRITE PROBE FIRST (round 11 inspector delta row 2). A launcher folder that cannot be
+    # written is left alone BEFORE anything is copied: otherwise a persistent failure (a
+    # read-only folder, a full disk) would add a full backup of the layout at every login.
+    local probe
+    probe="$(mktemp "${directory}/.scope-migration.XXXXXX" 2>/dev/null)" || return 1
+    rm -f -- "$probe"
+
+    stamp="$(date -u +%Y-%m-%dT%H%M%SZ)" || return 1
+    mkdir -p "$BACKUP_ROOT" || return 1
+    target="$(mktemp -d "${BACKUP_ROOT}/launchers-${stamp}-XXXX")" || return 1
+    [[ -n "$target" && -d "$target" ]] || return 1
+    # A copy that fails part way is removed, never left to pile up beside the good ones.
+    cp -a "$directory" "${target}/launchers" || { rm -rf -- "$target"; return 1; }
+    {
+        printf 'Kodachi dock layout backup, taken before the launchers moved into their own scopes\n'
+        printf 'Taken:        %s\n' "$stamp"
+        printf 'Origin:       %s\n' "$directory"
+        printf 'Launchers whose Exec line gained the scope prefix: %s\n' "${#pending[@]}"
+        printf '\n'
+        printf 'To restore, move the current layout aside first, then move this\n'
+        printf 'one back. Do not delete anything:\n'
+        printf '  mv %s %s.superseded\n' "$directory" "$directory"
+        printf '  mv %s/launchers %s\n' "$target" "$directory"
+        printf '  systemctl --user restart kodachi-dock\n'
+    } >"${target}/RESTORE.txt" || return 1
+
+    for launcher in "${pending[@]}"; do
+        temporary="$(mktemp "${directory}/.scope-migration.XXXXXX")" || return 1
+        if ! awk -v prefix="$SCOPE_LAUNCH_PREFIX" '
+                !done && /^Exec=/ { print "Exec=" prefix " " substr($0, 6); done = 1; next }
+                { print }
+            ' "$launcher" >"$temporary" \
+            || ! chmod --reference="$launcher" "$temporary" \
+            || ! mv -f "$temporary" "$launcher"; then
+            rm -f -- "$temporary"
+            log "WARNING: could not move $(basename "$launcher") into its own scope; it is unchanged"
+            return 1
+        fi
+        changed=$((changed + 1))
+    done
+    log "Moved ${changed} dock launcher(s) into their own systemd scope (layout copy in ${target})"
+}
+
 verb_build() {
     local only_if_missing="${1:-}"
 
@@ -1179,6 +1301,9 @@ verb_build() {
             existing="$(find "$LAUNCHER_DIR" -maxdepth 1 -type f -name '*.desktop' | wc -l)"
         fi
         if [[ "$existing" -gt 0 ]] && layout_is_structurally_sound "$LAUNCHER_DIR"; then
+            if ! migrate_launcher_scopes "$LAUNCHER_DIR"; then
+                log "WARNING: the scope migration stopped early; the dock starts with its launchers as they are"
+            fi
             log "Dock layout already present (${existing} files), leaving it alone."
             return 0
         fi

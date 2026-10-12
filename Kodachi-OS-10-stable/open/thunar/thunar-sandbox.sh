@@ -14,7 +14,7 @@
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-08-26
 #
 # Description:
@@ -86,7 +86,7 @@ command -v firejail >/dev/null 2>&1 || die "firejail is not installed."
 # STOP THE SANDBOX LITTERING THE FOLDER THE USER POINTED IT AT.
 #
 # `--private=<dir>` makes <dir> the sandbox HOME, so anything the confined program
-# writes to its home lands in the user's own folder. Measured on <lab-host>
+# writes to its home lands in the user's own folder. Measured on a test VM
 # with XDG_* UNSET, which is the real desktop condition, a single sandbox run left:
 #     .bashrc  .cache/  .config/  .inputrc  .local/  .Xauthority
 # and the reporter saw the same six on the <lab-host> live ISO: a right-click action

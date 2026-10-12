@@ -106,7 +106,7 @@ def apt_lists_present(directory=None):
 
     MEASURED 2026-09-10, operator-reported. A user was told to install GIMP and
     got "not offered by apt" on all 8 Debian applications. On the installed VM
-    <lab-host> with populated lists the same code reports 7 available and 1
+    with populated lists the same code reports 7 available and 1
     genuinely unavailable (nautilus-dropbox, whose contrib area is not enabled).
     Re-run with `apt-cache -o Dir::State::Lists=<empty dir>`, the reproduction of
     a fresh live boot, it reports 8 of 8 unavailable, which is exactly the
@@ -1284,6 +1284,230 @@ def local_iso_version(meta, product):
     return None
 
 
+# ----------------------------------------------------------------------------
+# WHICH ISO EDITION THIS MACHINE CARRIES, AND WHETHER ITS BUILD IS KNOWN
+# ----------------------------------------------------------------------------
+# 2026-10-04, the last reader of the ISO edition-stamp class. iso_rows built one
+# row per edition UNCONDITIONALLY and never read `iso_stamped_track`, so:
+#
+#   * a desktop machine showed a phantom "Terminal ISO" row, compared with the
+#     binary pack's frozen terminal counter (build-meta.json keeps a figure for
+#     every edition; only this machine's own was stamped by its ISO build);
+#   * a binary-pack install on plain Debian/Ubuntu was offered both images;
+#   * an ISO whose build number an apt upgrade erased (editions.<track>
+#     .build_unknown, written by installers/kodachi-iso-edition-lib.sh) read
+#     "installed unknown" on both lines and was offered NO update, while conky
+#     and the dashboard both offer it.
+#
+# THE RULES ARE THE DASHBOARD'S, NOT NEW ONES, so the dock and the Update Center
+# give the same answer (dashboard/gui/kodachi-dashboard/src/lib/utils/
+# versionUpdates.ts, editionCarriedByThisImage and the build-unknown branch of
+# buildVersionUpdateSummary):
+#
+#   iso_stamped_track ABSENT  a build-meta.json predating the marker: cannot
+#                             tell, so BOTH editions are carried (nothing in the
+#                             field is blanked)
+#   iso_stamped_track ""      the binary pack on no Kodachi ISO: NEITHER edition
+#   iso_stamped_track <name>  only that edition
+#
+# THE SOURCE IS THE DASHBOARD'S TOO (round 11i, 2026-10-04). The window reads
+# build-meta.json ONLY, the one file the dashboard (versionUpdates.ts) and conky
+# (system-meta.sh, version-check.sh) read. /etc/kodachi/iso-edition.json, the
+# durable record no package owns, is the kodachi-assets postinst's INPUT: it
+# re-applies the record into build-meta.json on every configure. The dock used
+# to PREFER the record, so whenever the two files differed (between an unpack
+# and its configure, or after a re-apply that could not finish) it offered a
+# desktop ISO update while conky read "Desktop N/A" and the dashboard offered
+# none. One file means the three always give the same answer, and the next
+# configure corrects all three at once. The `record` arguments below remain for
+# a caller that passes one explicitly; iso_rows never reads the record file.
+#
+# A carried edition whose build is unknown shows "<line> (build unknown)" and is
+# OFFERED every published build on a line at or above its own release line,
+# compared exactly as the dashboard compares it (numeric segments, a missing
+# segment counts as 0). A local line already ahead of the published one is
+# offered nothing.
+
+ISO_EDITION_RECORD_DEFAULT = "/etc/kodachi/iso-edition.json"
+
+ISO_TRACKS = tuple(product for product, _label in ISO_PRODUCTS)
+
+ISO_NONE_CARRIED_NOTE = ("this machine was not installed from a Kodachi ISO "
+                         "image, so there is no image to update")
+
+
+def iso_edition_record_path():
+    return (os.environ.get("KODACHI_ISO_EDITION_RECORD")
+            or ISO_EDITION_RECORD_DEFAULT)
+
+
+def read_iso_edition_record(path=None):
+    """The durable ISO edition record, or {} when absent or unreadable."""
+    try:
+        with open(path or iso_edition_record_path(), "r", encoding="utf-8",
+                  errors="replace") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _record_track(record):
+    """The record's track when it names a real ISO edition, else None."""
+    if not isinstance(record, dict):
+        return None
+    track = record.get("track")
+    if isinstance(track, str) and track.strip() in ISO_TRACKS:
+        return track.strip()
+    return None
+
+
+def _record_build(value):
+    """A positive build number, as kodachi-iso-edition-lib.sh's as_build reads it."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.strip().isdigit() \
+            and int(value.strip()) > 0:
+        return int(value.strip())
+    return None
+
+
+def carried_iso_editions(meta, record=None):
+    """The ISO editions this machine carries, in ISO_PRODUCTS order.
+
+    A record PASSED by a caller wins when it names a valid track; otherwise the
+    three meanings of `iso_stamped_track` above, exactly as the dashboard reads
+    them. The window passes no record (iso_rows reads build-meta.json only), so
+    it follows the same file as the dashboard and conky.
+    """
+    track = _record_track(record)
+    if track:
+        return (track,)
+    raw = meta.get("iso_stamped_track") if isinstance(meta, dict) else None
+    # ABSENT is not the same answer as EMPTY. A value that is not a string is
+    # read as absent too: it carries no track name, so it cannot rule one out.
+    if not isinstance(raw, str):
+        return ISO_TRACKS
+    raw = raw.strip()
+    return tuple(product for product in ISO_TRACKS if product == raw)
+
+
+def local_iso_edition(meta, product, record=None):
+    """``(local_version, build_unknown)`` for one CARRIED edition.
+
+    build_unknown is True when the edition is this machine's but its ISO build
+    is not known: a record a caller passed says build_known false (or has no
+    usable build), or build-meta.json marks editions.<product>.build_unknown
+    (the window's only source, as for the dashboard and conky). The number such
+    an entry still carries is the pack's frozen counter, so none is returned.
+    """
+    track = _record_track(record)
+    if track is not None and track == product:
+        known = record.get("build_known", True) is not False
+        build = _record_build(record.get("build_number")) if known else None
+        nightly = record.get("nightly_version")
+        nightly = nightly.strip() if isinstance(nightly, str) else ""
+        if build is not None and nightly:
+            return nightly, False
+        return None, True
+    if track is None and isinstance(meta, dict):
+        editions = meta.get("editions")
+        entry = editions.get(product) if isinstance(editions, dict) else None
+        if isinstance(entry, dict) and entry.get("build_unknown") is True:
+            return None, True
+    return local_iso_version(meta, product), False
+
+
+def semantic_base(version):
+    """The bare release line MAJOR.MINOR.PATCH, as the dashboard's semanticBaseOf."""
+    if not isinstance(version, str):
+        return None
+    match = re.match(r"^(?:v)?(\d+\.\d+\.\d+)", version.strip(), re.I)
+    return match.group(1) if match else None
+
+
+def compare_semantic(local, remote):
+    """The dashboard's compareSemanticVersions, segment for segment.
+
+    'outdated' when remote is newer, 'newer' when local is, 'current' when
+    equal and 'unknown' when either side is missing. A segment that is not a
+    number counts as 0 and a missing one counts as 0, so "<lab-host>" against
+    "<lab-host>" is outdated and against "<lab-host>" is current. That is NOT the
+    dpkg order compare_versions implements, which is why it is a second
+    function: the build-unknown decision must agree with the dashboard's.
+    """
+    def comparable(value):
+        if not isinstance(value, str) or not value.strip():
+            return None
+        text = re.sub(r"^v", "", value.strip())
+        text = re.sub(r"\s*\(build\s+(\d+)\)\s*$", r".\1", text,
+                      flags=re.I).strip()
+        parts = []
+        for piece in text.split("."):
+            try:
+                parts.append(int(piece.strip()))
+            except ValueError:
+                parts.append(0)
+        return parts
+    left = comparable(local)
+    right = comparable(remote)
+    if left is None or right is None:
+        return "unknown"
+    for index in range(max(len(left), len(right))):
+        lval = left[index] if index < len(left) else 0
+        rval = right[index] if index < len(right) else 0
+        if rval > lval:
+            return "outdated"
+        if lval > rval:
+            return "newer"
+    return "current"
+
+
+def iso_release_line(meta, record=None):
+    """The release line known locally for a build-unknown edition, or None.
+
+    build-meta.json's own version first, as the dashboard reads it; the
+    record's version only when the metadata names no line at all.
+    """
+    candidates = []
+    if isinstance(meta, dict):
+        candidates.extend((meta.get("version"), meta.get("nightly_version")))
+    if isinstance(record, dict):
+        candidates.append(record.get("version"))
+    for candidate in candidates:
+        base = semantic_base(candidate)
+        if base:
+            return base
+    return None
+
+
+def iso_build_unknown_label(base):
+    """The dashboard's exact words for a carried edition with no known build."""
+    return "%s (build unknown)" % base if base else "build unknown"
+
+
+def iso_state_build_unknown(base, published):
+    """One published line against a carried edition whose build is unknown.
+
+    UPDATE exactly when the dashboard offers it: something is published and
+    either no local line is known or the published build is above the line.
+    A local line ahead reads AHEAD; the same bare line with no build segment
+    cannot be placed, so it reads UNKNOWN ("not compared"), never CURRENT.
+    """
+    if not published:
+        return ISO_UNKNOWN
+    if not base:
+        return ISO_UPDATE
+    verdict = compare_semantic(base, published)
+    if verdict == "outdated":
+        return ISO_UPDATE
+    if verdict == "newer":
+        return ISO_AHEAD
+    return ISO_UNKNOWN
+
+
 def fetch_main_info(timeout=8, url=None):
     """One HTTPS GET of the published release file -> ``(dict, error)``.
 
@@ -1383,28 +1607,100 @@ def iso_state(local, published):
     return ISO_CURRENT
 
 
-def iso_rows(info, meta=None):
-    """One row per ISO edition, both published lines compared separately.
+def iso_rows(info, meta=None, record=None):
+    """One row per ISO edition THIS MACHINE CARRIES, both lines compared separately.
 
-    Pure: takes the two documents and returns what they say, so the window can
+    Pure when given documents: takes the published file, build-meta.json and
+    an optional edition record and returns what they say, so the window can
     render it on the GTK thread and a test can assert it without a network.
+    With no `meta`, build-meta.json is read from disk and NOTHING else: the
+    record file is never read, so the window answers from the same file as the
+    dashboard and conky (round 11i). An omitted `record` is empty.
+
+    A machine on no Kodachi ISO gets NO rows (see carried_iso_editions), and a
+    carried edition whose build is unknown carries `build_unknown: True`, the
+    dashboard's "(build unknown)" wording in `local`, and an update on every
+    published line above its release line.
     """
-    metadata = meta if meta is not None else read_build_meta()
+    # build-meta.json only, as the dashboard and conky read it (THE SOURCE IS
+    # THE DASHBOARD'S TOO, above); a record is used only when a caller passes one.
+    metadata = read_build_meta() if meta is None else meta
+    edition_record = record if isinstance(record, dict) else {}
+    carried = carried_iso_editions(metadata, edition_record)
     rows = []
     for product, label in ISO_PRODUCTS:
-        local = local_iso_version(metadata, product)
+        if product not in carried:
+            continue
+        local, build_unknown = local_iso_edition(metadata, product,
+                                                 edition_record)
         stable, beta, beta_url = _published_iso(info, product)
+        if build_unknown:
+            base = iso_release_line(metadata, edition_record)
+            local = iso_build_unknown_label(base)
+            stable_state = iso_state_build_unknown(base, stable)
+            beta_state = iso_state_build_unknown(base, beta)
+        else:
+            stable_state = iso_state(local, stable)
+            beta_state = iso_state(local, beta)
         rows.append({
             "product": product,
             "label": label,
             "local": local,
+            "build_unknown": build_unknown,
             "stable": stable,
             "beta": beta,
             "beta_url": beta_url,
-            "stable_state": iso_state(local, stable),
-            "beta_state": iso_state(local, beta),
+            "stable_state": stable_state,
+            "beta_state": beta_state,
         })
     return rows
+
+
+def _info_from_cached_rows(rows):
+    """Rebuild the published side out of a cache written before it kept `info`.
+
+    Each old row carried the published stable and beta builds it was compared
+    with, which is all _published_iso reads, so an old cache can still be
+    re-judged against what this machine carries today instead of replaying
+    rows built by the rule that drew the phantom edition.
+    """
+    if not isinstance(rows, list) or not rows:
+        return None
+    info = {}
+    for row in rows:
+        if not isinstance(row, dict) or row.get("product") not in ISO_TRACKS:
+            continue
+        product = row["product"]
+        stable = row.get("stable")
+        if isinstance(stable, str) and stable.strip():
+            info[product] = {"nightly_version": stable.strip()}
+        beta = row.get("beta")
+        if isinstance(beta, str) and beta.strip():
+            entry = {"nightly_version": beta.strip()}
+            url = row.get("beta_url")
+            if isinstance(url, str) and url.strip():
+                entry["url"] = url.strip()
+            info.setdefault("channels", {}).setdefault(
+                "beta", {}).setdefault("products", {})[product] = entry
+    return info
+
+
+def iso_rows_from_cache(cached, meta=None, record=None):
+    """Rows for an offline open: the last published read, judged against today.
+
+    The cache keeps the published document (`info`) so the rows are rebuilt
+    with the current edition rules and the current local files. A cache from
+    before that only holds rows; their published values are lifted back out.
+    Either way an edition this machine does not carry never comes back.
+    """
+    if not isinstance(cached, dict):
+        return []
+    info = cached.get("info")
+    if not isinstance(info, dict):
+        info = _info_from_cached_rows(cached.get("rows"))
+    if info is None:
+        return []
+    return iso_rows(info, meta, record)
 
 
 # ----------------------------------------------------------------------------
@@ -2214,7 +2510,7 @@ def system_sources(directory=None, list_file=None):
 # The status strip lays four facts across a row inside the content column,
 # which is the window's 944px minus a 155px sidebar, so a row has roughly 760px
 # for four labels AND four values. MEASURED 2026-08-30 on the live window on
-# <lab-host>: "broken packages, repair needed" rendered as
+# a test VM: "broken packages, repair needed" rendered as
 # "PENDING UPDATES  broken packages, repair n...", i.e. the fix for unreadable
 # chips shipped a chip that was still unreadable, on the very cell the operator
 # photographed.
@@ -2548,8 +2844,8 @@ FAVOURITE_APPS = (
     #
     #   A plain Debian trixie install enables `main non-free-firmware` only,
     #   which is the installer's default. `apt-cache policy nautilus-dropbox`
-    #   returns no candidate there, measured 2026-08-22 on <lab-host> and
-    #   <lab-host>.
+    #   returns no candidate there, measured 2026-08-22 on a test VM and
+    #   a test VM.
     #
     # I ORIGINALLY WROTE THE OPPOSITE HERE, that the ISO does not enable
     # non-free, on the strength of that same measurement. Both machines report

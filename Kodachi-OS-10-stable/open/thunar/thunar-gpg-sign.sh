@@ -14,7 +14,7 @@
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-02-05
 #
 # Description:
@@ -85,7 +85,7 @@ fi
 # IT MUST BE `|| true`, NOT NOTHING. `set -e` is in force at the top of this file,
 # so a bare `grep -c` makes the assignment itself fail on a no-match and the script
 # EXITS SILENTLY right here, with no dialog at all, which is worse than the bug
-# being fixed. Measured on <lab-host>: rc=1, zero bytes written by zenity.
+# being fixed. Measured on a test VM: rc=1, zero bytes written by zenity.
 # `|| true` keeps grep's own "0" on stdout, drops the spurious second value, and
 # neutralises the exit status.
 KEY_COUNT=$(gpg --list-secret-keys 2>/dev/null | grep -c "^sec" || true)

@@ -102,6 +102,8 @@ export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
 
 # Flag to signal clean shutdown, prevents restart loop during logout/poweroff.
 SHUTTING_DOWN=0
+# Set while an X server is up that this session cannot draw on (see display_alive).
+WAITING_FOR_DISPLAY=0
 
 count_kodachi_conky() {
     # Count only THIS user's panels. A global pgrep also counts conky panels
@@ -318,13 +320,23 @@ _wd_missing() {
     WD_MISSING="${WD_MISSING% }"
 }
 
-# Check if the X display is still alive. Returns 1 if display is gone (shutdown/logout).
+# Can THIS session draw on $DISPLAY? 0 = yes; 1 = the display is gone (no X server: poweroff, a
+# console logout); 2 = an X server owns the socket but this session cannot use it. After an XFCE
+# session ends, the login greeter's X server takes the same :0 socket while ~/.Xauthority holds no
+# valid cookie: every conky start then fails authorization and segfaults, and the socket-only check
+# called that alive, so the watchdog relaunched conky every few seconds until the next login
+# (measured round 11i on .235: 70 conky segfaults in 7 minutes). The socket is the evidence only
+# when xdpyinfo is not installed.
 display_alive() {
-    command -v xdpyinfo >/dev/null 2>&1 && xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && return 0
-    # Fallback: check if X11 socket exists
     local display_num="${DISPLAY#:}"
     display_num="${display_num%%.*}"
-    [[ -S "/tmp/.X11-unix/X${display_num}" ]] && return 0
+    local socket_dir="${KODACHI_X11_SOCKET_DIR:-/tmp/.X11-unix}"
+    if command -v xdpyinfo >/dev/null 2>&1; then
+        xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && return 0
+        [[ -S "$socket_dir/X${display_num}" ]] && return 2
+        return 1
+    fi
+    [[ -S "$socket_dir/X${display_num}" ]] && return 0
     return 1
 }
 
@@ -335,8 +347,8 @@ restart_conky() {
 
 # On SIGTERM/SIGINT (systemd stop, logout, shutdown): kill conky children and exit.
 #
-# Two paths based on whether X is alive:
-#   - X alive (user-triggered `systemctl --user stop` from health-control
+# Two paths, decided by display_alive:
+#   - X alive, state 0 (user-triggered `systemctl --user stop` from health-control
 #     conky-disable, dashboard, tray): SIGTERM first so conky can detach
 #     from the X server cleanly. Abrupt SIGKILL while X is up leaves
 #     dangling Window/Damage/Picture resources, which has been observed to
@@ -344,13 +356,17 @@ restart_conky() {
 #     because the panel just sees its X connection go bad). Poll for up to
 #     2s with 100ms granularity, then SIGKILL any stragglers, well within
 #     the unit's TimeoutStopSec=5.
-#   - X dying (logout/poweroff): SIGKILL immediately. conky's own SIGTERM
-#     handler tries to draw to a dead display and segfaults; the historical
-#     1-second wait here once allowed hundreds of segfaults to flood the
-#     kernel log and stall session-2.scope for 90+ seconds.
+#   - X dying or gone, state 1 (logout/poweroff), or an X server this session
+#     cannot use, state 2 (the login greeter's after the session ended):
+#     SIGKILL immediately. conky's own SIGTERM handler tries to draw to a
+#     display it has lost and segfaults; the historical 1-second wait here
+#     once allowed hundreds of segfaults to flood the kernel log and stall
+#     session-2.scope for 90+ seconds.
 cleanup_and_exit() {
     SHUTTING_DOWN=1
-    if display_alive; then
+    local shutdown_display=0
+    display_alive || shutdown_display=$?
+    if (( shutdown_display == 0 )); then
         log "Watchdog received shutdown signal (X alive); SIGTERM conky panels first"
         pkill -x conky >/dev/null 2>&1 || true
 
@@ -370,10 +386,25 @@ cleanup_and_exit() {
             pkill -9 -x conky >/dev/null 2>&1 || true
         fi
     else
-        log "Watchdog received shutdown signal (X dying); SIGKILL conky immediately"
+        if (( shutdown_display == 2 )); then
+            log "Watchdog received shutdown signal (X display $DISPLAY is up but not usable by this session); SIGKILL conky immediately"
+        else
+            log "Watchdog received shutdown signal (X display $DISPLAY gone or dying); SIGKILL conky immediately"
+        fi
         pkill -9 -x conky >/dev/null 2>&1 || true
     fi
-    pkill -9 -f conky-launcher >/dev/null 2>&1 || true
+    # A launcher running --stop or --disable is the process that stopped this service. Killing it
+    # here made a hand-run `conky-launcher.sh --stop` die with "Killed" (exit 137) before its own
+    # conky cleanup (round 12, 2026-10-06). Every other launcher, such as a restart this watchdog
+    # started, is still killed as before.
+    local _lpid _largs
+    for _lpid in $(pgrep -f conky-launcher 2>/dev/null); do
+        _largs="$(tr '\0' ' ' < "/proc/$_lpid/cmdline" 2>/dev/null)" || continue
+        case " $_largs " in
+            *" --stop "*|*" --disable "*) continue ;;
+        esac
+        kill -9 "$_lpid" 2>/dev/null || true
+    done
     log "Watchdog stopped (clean shutdown)"
     exit 0
 }
@@ -389,7 +420,13 @@ last_restart_ts=0
 current_count="$(count_kodachi_conky)"
 initial_missing="$(missing_panel_configs "$launcher" | tr '\n' ' ')"
 initial_missing="${initial_missing% }"
-if (( current_count < MIN_PANELS )) || (( current_count > MAX_PANELS )); then
+# The startup repair asks the same display question as the loop: a watchdog (re)started while this
+# session cannot draw must not launch conky into the greeter's X server (see display_alive).
+initial_display=0
+display_alive || initial_display=$?
+if (( initial_display != 0 )); then
+    log "Initial X display state ${initial_display} (1 gone, 2 not usable by this session); no startup restart, the loop decides"
+elif (( current_count < MIN_PANELS )) || (( current_count > MAX_PANELS )); then
     log "Initial conky count=${current_count} outside range ${MIN_PANELS}-${MAX_PANELS}; requesting restart"
     restart_conky
     last_restart_ts=$(date +%s)
@@ -406,10 +443,31 @@ while true; do
     fi
 
     # If X display is gone (logout/shutdown), stop instead of restart-looping
-    if ! display_alive; then
+    display_state=0
+    display_alive || display_state=$?
+    if (( display_state == 1 )); then
         log "X display $DISPLAY is no longer available; stopping watchdog"
-        pkill -x conky >/dev/null 2>&1 || true
+        # SIGKILL, as the shutdown handler does for a lost display: conky's own SIGTERM handler
+        # draws to the display it lost and segfaults.
+        pkill -9 -x conky >/dev/null 2>&1 || true
         break
+    fi
+    # An X server is up but this session cannot draw on it (the login greeter after the session
+    # ended): never relaunch conky into it, every start fails authorization and segfaults. Wait for
+    # a session that can (the next login writes a valid ~/.Xauthority), then watch as before.
+    if (( display_state == 2 )); then
+        if (( ! WAITING_FOR_DISPLAY )); then
+            log "X display $DISPLAY is up but this session cannot use it; not relaunching conky until it can"
+            WAITING_FOR_DISPLAY=1
+        fi
+        sleep "$CHECK_INTERVAL"
+        continue
+    fi
+    if (( WAITING_FOR_DISPLAY )); then
+        log "X display $DISPLAY is usable again; watching the panels"
+        WAITING_FOR_DISPLAY=0
+        missing_streak=0
+        misplaced_streak=0
     fi
 
     _wd_scan

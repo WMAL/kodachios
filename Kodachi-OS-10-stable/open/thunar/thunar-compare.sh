@@ -14,7 +14,7 @@
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-08-26
 #
 # Description:
@@ -71,7 +71,7 @@ fi
 # pattern appears inside this script file, never in the argv of the shell
 # running it, which is the trap that matters for -f.
 #
-# MEASURED on <lab-host> with a real Python program at a meld-shaped path:
+# MEASURED on a test VM with a real Python program at a meld-shaped path:
 # comm reads `meld`, not `python3`, because the kernel sets comm from the SCRIPT
 # name for a `#!` program, so -x does work here. The launched pid appeared in
 # both matchers and disappeared from both after kill, which is the two-direction

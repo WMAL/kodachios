@@ -473,6 +473,16 @@ systemd_resolved_is_masked() {
 # Used as the DNSCrypt-only-architecture replacement for the legacy
 # systemd-resolved stub-resolv.conf symlink path.
 point_resolv_conf_to_dnscrypt() {
+    # Round 11i (Hunter, 2026-10-04): a resolv.conf that dns-switch wrote is the user's DNS choice (it carries
+    # dns-switch's own header and, usually, its immutable lock). Every upgrade used to run this rewrite through
+    # kodachi-system-setup.sh, which removed the lock, replaced the file, and left dns-switch reporting Kodachi's
+    # own DNS as "Non-Kodachi". Leave such a file, and its lock, exactly as dns-switch left it.
+    if [ -f /etc/resolv.conf ] && [ ! -L /etc/resolv.conf ] \
+       && grep -q '^# DNS Configuration for ' /etc/resolv.conf 2>/dev/null \
+       && grep -q '^# Modified by: dns-switch' /etc/resolv.conf 2>/dev/null \
+       && grep -q '^nameserver ' /etc/resolv.conf 2>/dev/null; then
+        return 0
+    fi
     chattr -i /etc/resolv.conf 2>/dev/null || true
     rm -f /etc/resolv.conf 2>/dev/null || true
     {
@@ -1843,6 +1853,48 @@ EOF
     done
     if [[ $tui_added -gt 0 ]]; then
         print_info "Added NOPASSWD rules for Dashboard TUI tools"
+    fi
+
+    # Round 11 B14 (2026-10-03): the dashboard polls Kodachi's status commands through sudo
+    # every few seconds, and every call wrote THREE journal lines: the COMMAND audit line plus
+    # pam_unix "session opened" and "session closed". In a real user's debug bundle that was
+    # 3489 of 9371 journal lines (37%). `!pam_session` for exactly these commands drops the two
+    # session lines and KEEPS the COMMAND line, so every root command stays on record. Measured
+    # on a test VM with sudo 1.9.16p2: an aliased command logged 0 session lines and its
+    # COMMAND line, an unaliased one still 2. Classic sudo only, like the mail Defaults above:
+    # sudo-rs rejects a setting it does not know, and that would fail visudo.
+    if ! sudo --version 2>/dev/null | grep -qi 'sudo-rs'; then
+        # READ-ONLY STATUS POLLS ONLY (Hunter review, round 11). The first version aliased every
+        # hook binary, so every privileged Kodachi action (torrify, connect, ...) also skipped its
+        # PAM session, pam_limits included. Only the polled status subcommands are listed, at both
+        # install paths, bare and with arguments; ip-fetch is read-only throughout.
+        local poll_list="" poll dir pair
+        local -a status_polls=(
+            "health-control security-verify" "health-control security-score" "health-control mac-show-macs"
+            "health-control mac-active-interface" "health-control net-check" "health-control kill-switch-status"
+            "tor-switch which-is-active" "routing-switch status"
+            "dns-switch status" "dns-switch dnscrypt" "dns-switch pihole"
+            "online-auth license-status" "online-auth check-login" "online-auth check-all-status"
+            "ip-fetch"
+        )
+        for dir in ${dashboard_dir:+"$dashboard_dir"} /usr/local/bin; do
+            for pair in "${status_polls[@]}"; do
+                poll_list+="${poll_list:+, }$dir/$pair, $dir/$pair *"
+            done
+        done
+        for poll in "/usr/sbin/nft list ruleset" "/usr/sbin/iptables-save" "/usr/sbin/ip6tables-save" \
+                    "/usr/sbin/ufw status" "/usr/sbin/iptables -t nat -L OUTPUT -n" "/usr/sbin/iptables -S" \
+                    "/usr/sbin/iptables -S *" "/usr/sbin/ip6tables -S" "/usr/sbin/ip6tables -S *" \
+                    "/usr/sbin/iptables -L *" "/usr/sbin/iptables -t nat -L *" "/usr/sbin/nft list table *" \
+                    "/usr/bin/wg show interfaces" "/usr/bin/awg show interfaces"; do
+            poll_list+="${poll_list:+, }$poll"
+        done
+        {
+            echo ""
+            echo "# Status polls: keep the COMMAND audit line, skip the PAM session open/close pair"
+            echo "Cmnd_Alias KODACHI_STATUS_POLLS = $poll_list"
+            echo "Defaults!KODACHI_STATUS_POLLS !pam_session"
+        } >> "$sudoers_file"
     fi
 
     # Set correct permissions (0440 = read-only, root:root)
@@ -3422,7 +3474,7 @@ needs_upgrade() {
 ESSENTIAL_PACKAGES="curl wget openssl ca-certificates coreutils findutils grep procps psmisc systemd sudo dmidecode lsof acl util-linux util-linux-extra mount uuid-runtime inotify-tools ntpsec ntpsec-ntpdate isc-dhcp-client pass pwgen xkcdpass"
 
 # Networking - Network and VPN tools
-NETWORK_PACKAGES="tor tor-geoipdb torsocks obfs4proxy openvpn wireguard-tools iptables nftables arptables ebtables iproute2 iputils-ping net-tools nyx apt-transport-tor shadowsocks-libev redsocks microsocks haproxy"
+NETWORK_PACKAGES="tor tor-geoipdb torsocks obfs4proxy openvpn wireguard-tools iptables nftables conntrack arptables ebtables iproute2 iputils-ping net-tools nyx apt-transport-tor shadowsocks-libev redsocks microsocks haproxy"
 
 # Security - Protection and hardening tools
 SECURITY_PACKAGES="ufw macchanger firejail apparmor apparmor-utils apparmor-profiles aide lynis rkhunter chkrootkit usbguard ecryptfs-utils cryptsetup cryptsetup-initramfs cryptsetup-nuke-password fail2ban unattended-upgrades auditd libpam-pwquality libpam-google-authenticator secure-delete wipe nwipe libcap2-bin debsums cron"
@@ -3453,7 +3505,7 @@ MONITORING_PACKAGES="btop iftop nethogs ncdu nload iperf3 speedtest-cli"
 # "error while loading shared libraries: libgstvideo-1.0.so.0" (field report 2026-06-15).
 # dbus-x11 provides `dbus-launch`, GLib's session-bus fallback; without it a minimal
 # desktop gave the dashboard "Unable to get the session bus" (field report 2026-09-28).
-GUI_PACKAGES="bleachbit kitty fontconfig fonts-dejavu fonts-noto-core fonts-noto-color-emoji fonts-liberation fonts-liberation2 ttf-mscorefonts-installer conky-all alsa-utils pipewire pipewire-pulse pipewire-alsa wireplumber pulseaudio-utils libnotify-bin xclip xsel mpv xterm network-manager rofi xfce4-screenshooter xdotool xfce4-clipman xfce4-clipman-plugin copyq qalculate-gtk maim translate-shell python3 bc iproute2 iputils-ping traceroute speedtest-cli libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdg-utils dbus-x11 libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 libgstreamer-gl1.0-0 gstreamer1.0-plugins-base gstreamer1.0-gl"
+GUI_PACKAGES="bleachbit kitty fontconfig fonts-dejavu fonts-noto-core fonts-noto-color-emoji fonts-liberation fonts-liberation2 ttf-mscorefonts-installer conky-all x11-utils alsa-utils pipewire pipewire-pulse pipewire-alsa wireplumber pulseaudio-utils libnotify-bin xclip xsel mpv xterm network-manager rofi xfce4-screenshooter xdotool xfce4-clipman xfce4-clipman-plugin copyq qalculate-gtk maim translate-shell python3 bc iproute2 iputils-ping traceroute speedtest-cli libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdg-utils dbus-x11 libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 libgstreamer-gl1.0-0 gstreamer1.0-plugins-base gstreamer1.0-gl"
 
 # Packages that require contrib/non-free repositories
 CONTRIB_PACKAGES="shadowsocks-v2ray-plugin v2ray"
@@ -3617,7 +3669,9 @@ get_gui_packages_for_install() {
     local packages="$GUI_PACKAGES"
 
     if ! detect_gui_environment; then
-        packages=$(echo " $packages " | sed 's/ conky-all / /g' | xargs)
+        # x11-utils rides with conky: its xdpyinfo is how the conky watchdog tells a display this
+        # session can draw on from the login greeter's (round 11i).
+        packages=$(echo " $packages " | sed 's/ conky-all / /g; s/ x11-utils / /g' | xargs)
     fi
 
     echo "$packages"
@@ -6386,6 +6440,19 @@ resolve_dnscrypt_binary_path() {
     echo "/usr/local/bin/dnscrypt-proxy"
 }
 
+# Round 11 (A4 class): exit 0 when dns-switch reports that Tor owns system DNS. This is
+# dns-switch's own predicate (status --json, data.system_torrified: the live ruleset first,
+# the tor-switch marker only as a fallback), so there is no second copy of the rule here.
+# No dns-switch, a timeout or unreadable output means "not known to be torrified" (exit 1),
+# which keeps the old behaviour of starting the service.
+dnscrypt_start_blocked_by_tor() {
+    local dns_switch_bin="${HOOKS_DIR:-/opt/kodachi/dashboard/hooks}/dns-switch"
+    local status_json=""
+    [[ -x "$dns_switch_bin" ]] || return 1
+    status_json="$(timeout 30 "$dns_switch_bin" status --json 2>/dev/null)" || return 1
+    printf '%s' "$status_json" | grep -qE '"system_torrified"[[:space:]]*:[[:space:]]*true'
+}
+
 # Function to setup DNSCrypt Proxy systemd service
 setup_dnscrypt_service() {
     local install_method="$1"
@@ -6410,7 +6477,28 @@ setup_dnscrypt_service() {
     # Enable the DNSCrypt auto-recovery monitor so installed systems also climb back to
     # encrypted DNS automatically after any temporary plaintext fallback (privacy). Matches
     # the live-build 0006 hook; harmless if the units already exist.
-    cat > /etc/systemd/system/dnscrypt-monitor.service <<'MONSVC'
+    # Round 11 (B14): quiet in steady state. The 15 s timer wrote 17.5% of a user's boot
+    # journal (PID 1 Starting/Finished lines plus the JSON on stdout); the result is in
+    # dns-switch's own log, and a failed run still logs at warning. Same text as
+    # dns-switch dnscrypt_monitor_service_unit().
+    #
+    # Round 11 (B14 on existing installs): on a PACKAGE UPGRADE the kodachi-hooks-core
+    # postinst exports KODACHI_CONFIGURE_FROM (the version it replaces). The monitor is then
+    # the user's choice, not a fresh setup: `dns-switch disable-dnscrypt-monitor` removes
+    # both unit files, and this block used to write them back and enable the timer on every
+    # upgrade. So an upgrade rewrites the units (delivering the quiet text above) only when
+    # the timer is enabled, and never enables or starts it; a disabled or removed monitor is
+    # left alone. A first install, the bash installer and the ISO chroot (no
+    # KODACHI_CONFIGURE_FROM) keep writing and enabling it. dns-switch's own writer
+    # (enable-dnscrypt-monitor) is NOT called here: it also sends a desktop notification,
+    # starts a check at once and rewrites the stored DNSCrypt desired state, none of which an
+    # upgrade should do. This text is pinned to its template by
+    # livebuilds/kodachi-terminal-build/tests/test-dnscrypt-units-route-wait-and-quiet-monitor.sh.
+    local monitor_unit_dir="${KODACHI_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+    if [[ -n "${KODACHI_CONFIGURE_FROM:-}" ]] && ! systemctl is-enabled --quiet dnscrypt-monitor.timer 2>/dev/null; then
+        print_info "DNSCrypt monitor is not enabled; this upgrade leaves it off (sudo dns-switch enable-dnscrypt-monitor turns it on)"
+    else
+    cat > "$monitor_unit_dir"/dnscrypt-monitor.service <<'MONSVC'
 [Unit]
 Description=DNSCrypt monitor check (dns-switch)
 After=network-online.target
@@ -6419,10 +6507,12 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/dns-switch dnscrypt-monitor-check --json
-StandardOutput=journal
+StandardOutput=null
 StandardError=journal
+SyslogLevel=warning
+LogLevelMax=notice
 MONSVC
-    cat > /etc/systemd/system/dnscrypt-monitor.timer <<'MONTMR'
+    cat > "$monitor_unit_dir"/dnscrypt-monitor.timer <<'MONTMR'
 [Unit]
 Description=Run dnscrypt-monitor.service every 15 seconds
 
@@ -6437,10 +6527,24 @@ Persistent=true
 WantedBy=timers.target
 MONTMR
     systemctl daemon-reload 2>/dev/null || true
-    if systemctl enable --now dnscrypt-monitor.timer 2>/dev/null; then
+    if [[ -n "${KODACHI_CONFIGURE_FROM:-}" ]]; then
+        print_success "DNSCrypt monitor units refreshed; the monitor stays enabled"
+    elif systemctl enable --now dnscrypt-monitor.timer 2>/dev/null; then
         print_success "DNSCrypt auto-recovery monitor enabled and started"
     else
         print_warning "Could not enable dnscrypt-monitor.timer (will self-enable at runtime)"
+    fi
+    fi
+
+    # Round 11 (A4 class, the upgrade road): an upgrade on a TORRIFIED machine used to stop
+    # and restart dnscrypt-proxy below, so it ran behind Tor's DNS redirect, the state
+    # dns-switch now refuses to create (switch and dnscrypt-set, r11 A4). On an upgrade, ask
+    # dns-switch's own predicate first and leave the service stopped while Tor owns DNS;
+    # tor-switch restores DNSCrypt on detorrify. The unit and config above are refreshed
+    # either way. A first install cannot be torrified yet, so only upgrades ask.
+    if [[ -n "${KODACHI_CONFIGURE_FROM:-}" ]] && dnscrypt_start_blocked_by_tor; then
+        print_info "Tor owns system DNS: dnscrypt-proxy stays stopped (detorrify restores it)"
+        return 0
     fi
 
     # Safety: clear stuck systemd jobs before starting (boot race protection)
@@ -6487,7 +6591,11 @@ StartLimitBurst=10
 
 [Service]
 Type=simple
-ExecStartPre=+/bin/sh -c 'i=0; while [ \$i -lt 20 ]; do ping -c1 -W2 9.9.9.9 >/dev/null 2>&1 && exit 0; i=\$((i+1)); sleep 2; done; exit 0'
+# Round 11 (B6): wait for a ROUTE, not an ICMP reply. Torrify, the kill switch and
+# health-control block-ping drop ICMP by design, so a ping wait burned its whole
+# budget on every start (15 s per restart on a torrified user's machine) and sent
+# ICMP to Quad9 each time; ip route get is a local lookup that sends nothing.
+ExecStartPre=+/bin/sh -c 'i=0; while [ \$i -lt 20 ]; do ip route get 9.9.9.9 >/dev/null 2>&1 && exit 0; i=\$((i+1)); sleep 2; done; exit 0'
 ExecStart=$dnscrypt_bin -config /etc/dnscrypt-proxy/dnscrypt-proxy.toml
 WorkingDirectory=/etc/dnscrypt-proxy
 Restart=on-failure
@@ -6935,7 +7043,7 @@ install_pihole() {
     # below, and it reported "the packaged path (kodachi-pihole) failed" for a path
     # that was never attempted, then returned 1.
     #
-    # MEASURED 2026-09-04 on the <lab-host> beta live ISO (VM <lab-host>):
+    # MEASURED 2026-09-04 on the <lab-host> beta live ISO (a test VM):
     # Pi-hole was fully installed and working (kodachi-pihole <lab-host>-6 from the beta
     # channel, /usr/bin/pihole-FTL 28703537 bytes, /etc/pihole/ populated, all of it
     # placed by the offline-cache path in live-build hook 0012), and yet
@@ -8246,10 +8354,69 @@ echo ""
 # Detect if running in chroot environment (live-build)
 
 # Function to stop, disable service and kill processes (chroot-aware)
+# Round 11 (B13): exit 0 when an apt source file is exactly the Whonix entry Kodachi's ISO
+# hook 0005 wrote: comment and blank lines plus ONE line
+#   deb [signed-by=/usr/share/keyrings/whonix.gpg] https://deb.whonix.org <bookworm|trixie> main
+# (every version git holds of the hook wrote that line, with the suite fixed to bookworm or
+# taken from os-release). Anything else, including the bash installer's own kloak fallback
+# entry (no signed-by, "main contrib non-free", key in trusted.gpg.d), is not Kodachi's ISO
+# entry and is kept.
+whonix_list_is_iso_written() {
+    local list_file="$1"
+    [[ -f "$list_file" ]] || return 1
+    awk '
+        /^[[:space:]]*(#|$)/ { next }
+        $0 ~ /^deb \[signed-by=\/usr\/share\/keyrings\/whonix\.gpg\] https:\/\/deb\.whonix\.org (bookworm|trixie) main$/ { n++; next }
+        { other = 1 }
+        END { exit !(n == 1 && !other) }
+    ' "$list_file"
+}
+
+# Round 11 (B13, existing installs): hook 0005 no longer adds the deb.whonix.org repository
+# (nothing Kodachi installs comes from it: kloak is vendored as kodachi-kloak, tirdad comes
+# from the offline cache or Kicksecure), but every machine installed from an earlier ISO
+# still contacts deb.whonix.org on each apt update and trusts its key, and an upgrade from
+# it could replace the tirdad DKMS source Kodachi patches. Remove the list only when it is
+# exactly the ISO's entry and no package owns it; remove the key only when no package owns
+# it and no remaining apt source names it. Nothing installed is removed. Idempotent.
+remove_iso_whonix_repository() {
+    local list_file="${KODACHI_WHONIX_LIST:-/etc/apt/sources.list.d/whonix.list}"
+    local key_file="${KODACHI_WHONIX_KEY:-/usr/share/keyrings/whonix.gpg}"
+    local apt_etc="${KODACHI_APT_ETC_DIR:-/etc/apt}"
+    local src=""
+
+    if [[ -f "$list_file" ]]; then
+        if ! whonix_list_is_iso_written "$list_file"; then
+            print_info "Keeping $list_file: it is not the Whonix entry a Kodachi ISO wrote"
+            return 0
+        fi
+        if dpkg -S "$list_file" >/dev/null 2>&1; then
+            print_info "Keeping $list_file: a package owns it"
+            return 0
+        fi
+        rm -f "$list_file" && print_success "Removed the unused Whonix apt repository a Kodachi ISO added ($list_file); no installed package is removed"
+    fi
+
+    [[ -f "$key_file" ]] || return 0
+    dpkg -S "$key_file" >/dev/null 2>&1 && return 0
+    for src in "$apt_etc/sources.list" "$apt_etc"/sources.list.d/*.list "$apt_etc"/sources.list.d/*.sources; do
+        [[ -f "$src" ]] || continue
+        if grep -qF "$key_file" "$src" 2>/dev/null; then
+            print_info "Keeping $key_file: $src still uses it"
+            return 0
+        fi
+    done
+    rm -f "$key_file" && print_success "Removed the unused Whonix apt key ($key_file)"
+    return 0
+}
+
 apt_parity_system_cleanup() {
     # Consolidated system cleanup + hardening so the apt/deb postinst runs the SAME
     # neutralization the bash installer does at top-level (parity by construction).
     # Each step no-ops if its target is absent; safe to re-run.
+    # Round 11 (B13): the ISO's unused Whonix repository, on machines installed before
+    # hook 0005 stopped adding it.
+    declare -f remove_iso_whonix_repository >/dev/null 2>&1 && { remove_iso_whonix_repository || true; }
     print_step "Disabling conflicting services (Kodachi manages routing/tor/dns; print/mDNS off)..."
     if declare -f stop_and_disable_service >/dev/null 2>&1; then
         stop_and_disable_service "cups.socket" "CUPS Socket" ""
@@ -9177,6 +9344,82 @@ fi
 echo ""
 
 # =============================================================================
+# Keep the welcome script's build signature on this ISO's own build
+# =============================================================================
+# restamp_welcome_from_iso_identity <installed profile script> <packaged BUILD_VERSION>
+#
+# The ISO build stamps BUILD_VERSION / BUILD_NUM / BUILD_DATE in
+# /etc/profile.d/kodachi-autoshield.sh with the image's own facts (hook
+# 9999-zzzy-stamp-build-identity). An apt upgrade then installed the packaged copy over it and
+# the ISO's build went with it: measured 2026-10-04 on desktop ISO 52, term.log read "packaged
+# stamp <lab-host>; installed stamp <lab-host>" and the installed file then carried 34, a
+# terminal PACK counter, on a desktop image. Same defect as build-meta.json losing
+# iso_stamped_track.
+#
+# So after any install or refresh, a Kodachi ISO install (os-release ID=kodachi) whose ISO
+# release line equals the packaged script's line gets the ISO's values back. The ISO's facts
+# come from /etc/kodachi/iso-edition.json (written by the ISO build or the kodachi-assets
+# maintainer scripts), else from the ISO's own stamp in /etc/kodachi-version ("Version: X
+# (build N)", kept by kodachi-hooks-core's postinst as "Installed From: ISO X (build N)").
+# An unknown build is never stamped. A different line (a <lab-host> package on a <lab-host> ISO) is
+# left to the package, as kodachi-hooks-core's postinst already resets it. A host that is not
+# a Kodachi ISO (the bash installer on Debian/Ubuntu/Fedora) is never touched. The KODACHI_ISO_*
+# variables are path overrides for installers/tests/test-iso-edition-record.sh.
+restamp_welcome_from_iso_identity() {
+    local script="${1:-}" pkg_version="${2:-}"
+    local osrel="${KODACHI_ISO_OS_RELEASE:-/etc/os-release}"
+    local record="${KODACHI_ISO_EDITION_RECORD:-/etc/kodachi/iso-edition.json}"
+    local kver="${KODACHI_ISO_VERSION_FILE:-/etc/kodachi-version}"
+    local line="" iso_ver="" iso_build="" iso_date=""
+    [[ -n "$script" && -f "$script" && ! -L "$script" ]] || return 0
+    grep -qxE 'ID="?kodachi"?' "$osrel" 2>/dev/null || return 0
+    if [[ -r "$record" ]] && command -v python3 >/dev/null 2>&1; then
+        line=$(python3 - "$record" 2>/dev/null <<'ISOREC'
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        r = json.load(fh)
+except Exception:
+    raise SystemExit(0)
+if not isinstance(r, dict):
+    raise SystemExit(0)
+b = r.get("build_number")
+if (r.get("build_known") is True and isinstance(b, int) and not isinstance(b, bool) and b > 0
+        and str(r.get("version") or "").strip()):
+    print(str(r["version"]).strip(), b, str(r.get("build_date") or "").strip())
+ISOREC
+        )
+    fi
+    if [[ -z "$line" && -r "$kver" ]]; then
+        line=$(sed -nE 's/^[[:space:]]*Installed From:[[:space:]]*ISO[[:space:]]+([0-9]+(\.[0-9]+)*)[[:space:]]+\(build[[:space:]]+([0-9]+)\)[[:space:]]*$/\1 \3/p' "$kver" 2>/dev/null | head -n1)
+        [[ -n "$line" ]] || line=$(sed -nE 's/^[[:space:]]*Version:[[:space:]]*([0-9]+(\.[0-9]+)*)[[:space:]]+\(build[[:space:]]+([0-9]+)\)[[:space:]]*$/\1 \3/p' "$kver" 2>/dev/null | head -n1)
+        if [[ -n "$line" ]]; then
+            iso_date=$(sed -nE 's/^[[:space:]]*Build Date:[[:space:]]*([0-9]{4}-[0-9]{2}-[0-9]{2})[[:space:]]*$/\1/p' "$kver" 2>/dev/null | head -n1)
+            line="$line $iso_date"
+        fi
+    fi
+    read -r iso_ver iso_build iso_date <<< "$line"
+    [[ "$iso_ver" =~ ^[0-9]+(\.[0-9]+)*$ && "$iso_build" =~ ^[0-9]+$ ]] || return 0
+    [[ "$iso_ver" == "$pkg_version" ]] || return 0
+    [[ "$iso_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || iso_date=""
+    if grep -q "^BUILD_VERSION=\"${iso_ver}\"" "$script" 2>/dev/null \
+       && grep -q "^BUILD_NUM=\"${iso_build}\"" "$script" 2>/dev/null \
+       && { [[ -z "$iso_date" ]] || grep -q "^BUILD_DATE=\"${iso_date}\"" "$script" 2>/dev/null; }; then
+        return 0
+    fi
+    local -a expr=(-e "s|^BUILD_VERSION=\"[^\"]*\"|BUILD_VERSION=\"${iso_ver}\"|"
+                   -e "s|^BUILD_NUM=\"[^\"]*\"|BUILD_NUM=\"${iso_build}\"|")
+    [[ -n "$iso_date" ]] && expr+=(-e "s|^BUILD_DATE=\"[^\"]*\"|BUILD_DATE=\"${iso_date}\"|")
+    if sed -i -E "${expr[@]}" "$script" 2>/dev/null \
+       && grep -q "^BUILD_NUM=\"${iso_build}\"" "$script" 2>/dev/null; then
+        print_info "Kodachi welcome script build signature kept on this ISO's own build: ${iso_ver}.${iso_build}"
+    else
+        print_warning "Kodachi welcome script build signature could not be set to this ISO's build ${iso_ver}.${iso_build}"
+    fi
+    return 0
+}
+
+# =============================================================================
 # Install Kodachi AutoShield Commands
 # =============================================================================
 # This function installs the Kodachi welcome script and commands system-wide
@@ -9300,6 +9543,52 @@ install_welcome_commands() {
         cp "$PROFILE_SCRIPT" "$INSTALLED_SCRIPT"
         chmod 755 "$INSTALLED_SCRIPT"
     fi
+    # On a Kodachi ISO install the build signature describes the ISO, not the package that
+    # just replaced or refreshed the file (2026-10-04). No-op everywhere else.
+    restamp_welcome_from_iso_identity "$INSTALLED_SCRIPT" "$NEW_VERSION" || true
+
+    # Round 11f: KEEP the desktop wiring. The desktop ISO's 9999 hook points welcome (and
+    # shield, kodachi, Kodachi through it) at kodachi-dashboard-launcher, because AutoShield
+    # is a dashboard startup-screen tab there, and says that wiring "cannot be clobbered by
+    # the installer". It was: every `apt upgrade` runs this function through
+    # kodachi-system-setup.sh, which deleted that link and wrote the terminal wrapper, so
+    # `welcome` on an upgraded desktop opened terminal AutoShield and the SOC reported the
+    # new regular file. A welcome that already resolves to the dashboard launcher is left
+    # as it is; the terminal variant (welcome is the regular wrapper file) and a fresh
+    # install (no welcome) still get the wrapper below.
+    if [[ -L /usr/local/bin/welcome && -x /usr/local/bin/kodachi-dashboard-launcher \
+          && "$(readlink -f /usr/local/bin/welcome)" == "$(readlink -f /usr/local/bin/kodachi-dashboard-launcher)" ]]; then
+        print_success "Kodachi commands kept on the desktop wiring: welcome -> kodachi-dashboard-launcher"
+        return 0
+    fi
+
+    # Round 11f repair: a DESKTOP whose welcome an earlier upgrade already turned into the terminal
+    # wrapper (or that has no welcome) gets the wiring the 9999 hook makes: welcome and shield -> the
+    # dashboard launcher, kodachi and Kodachi -> welcome. A desktop is VARIANT_ID in /etc/os-release
+    # other than "terminal" (stamped by the ISO branding hook since round 11f; arm images are stamped
+    # terminal), or, on an image older than that stamp, an installed /usr/bin/xfce4-session (the
+    # terminal image purges X in its 9994 hook; every other variant keeps XFCE). The launcher must be
+    # an executable regular file, so a launcher that links back to welcome can never form a loop.
+    local _variant_id="" _is_desktop=false
+    # Only Kodachi's own os-release: another distro may set the same standard field (inspector delta-22 row 3).
+    if grep -qxE 'ID="?kodachi"?' /etc/os-release 2>/dev/null; then
+        _variant_id=$(sed -n 's/^VARIANT_ID=//p' /etc/os-release 2>/dev/null | tr -d '"' | head -1)
+    fi
+    if [[ -n "$_variant_id" ]]; then
+        [[ "$_variant_id" != terminal ]] && _is_desktop=true
+    elif [[ -x /usr/bin/xfce4-session ]]; then
+        _is_desktop=true
+    fi
+    if [[ "$_is_desktop" == true && -x /usr/local/bin/kodachi-dashboard-launcher && ! -L /usr/local/bin/kodachi-dashboard-launcher ]] \
+       && [[ ! -L /usr/local/bin/welcome ]] && [[ ! -e /usr/local/bin/welcome || -f /usr/local/bin/welcome ]]; then
+        rm -f /usr/local/bin/welcome
+        ln -s /usr/local/bin/kodachi-dashboard-launcher /usr/local/bin/welcome
+        ln -sfn /usr/local/bin/kodachi-dashboard-launcher /usr/local/bin/shield
+        ln -sfn /usr/local/bin/welcome /usr/local/bin/kodachi
+        ln -sfn /usr/local/bin/welcome /usr/local/bin/Kodachi
+        print_success "Kodachi commands restored to the desktop wiring: welcome and shield -> kodachi-dashboard-launcher"
+        return 0
+    fi
 
     # Always verify/recreate wrapper and symlinks (idempotent)
     # NOTE: /usr/local/bin/welcome may already be a SYMLINK (the 9999 ISO hook
@@ -9404,11 +9693,16 @@ install_oniux_launcher() {
             local OLD_VER
             NEW_VER=$(grep '^# Version:' "$ONIUX_SCRIPT" 2>/dev/null | awk '{print $NF}' || echo "")
             OLD_VER=$(grep '^# Version:' "$INSTALLED" 2>/dev/null | awk '{print $NF}' || echo "")
-            if [[ -n "$NEW_VER" ]] && [[ "$NEW_VER" == "$OLD_VER" ]]; then
+            # Round 11 (A18 class): decide by CONTENT, not by the "# Version:" literal. That
+            # literal was never bumped (9.0.1 in every copy through 10.0.x), so equal
+            # versions skipped every update: an installed copy that differed from the
+            # packaged one (an ISO's older license URL, or any later fix) was never
+            # replaced. The version is still read, for the message only.
+            if cmp -s "$ONIUX_SCRIPT" "$INSTALLED"; then
                 print_info "oniux-launcher already current (version $OLD_VER)"
                 SHOULD_INSTALL=false
-            elif [[ -n "$NEW_VER" ]]; then
-                print_info "Updating oniux-launcher ($OLD_VER -> $NEW_VER)..."
+            else
+                print_info "Updating oniux-launcher (${OLD_VER:-unknown} -> ${NEW_VER:-packaged copy}, content differs)..."
             fi
         fi
 
@@ -9888,6 +10182,13 @@ TimeoutStartSec=90
 # Reap every helper the reads left behind when the oneshot ends.
 KillMode=control-group
 LogLevelMax=notice
+# Round 11 B5 (2026-10-03): a Kodachi state change kicks this unit with
+# `systemctl restart --no-block` while it may still be activating (cli-core
+# state_change.rs), which ends the running collection with SIGTERM ON PURPOSE.
+# Without this line every such kick was logged at warning level as a unit
+# FAILURE ("Failed with result 'signal'", 13 and 15 times per boot in a real
+# user's journal), which defeats LogLevelMax=notice above.
+SuccessExitStatus=SIGTERM
 KODACHI_UNIT_EOF
 )
         conky_timer=$(cat <<'KODACHI_UNIT_EOF'

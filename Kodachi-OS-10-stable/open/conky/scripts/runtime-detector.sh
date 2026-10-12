@@ -14,7 +14,7 @@
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-03-02
 #
 # Description:
@@ -107,12 +107,40 @@ normalize_vpn_protocol_value() {
 # UNKNOWN, never "Off". Right after a state stamp the gateway refuses the pre-stamp snapshot
 # and the binary can time out, and the old "Off" default then printed a known
 # "Routing: Off / Protocol: None" about a machine nobody had measured.
+# Round 12 (2026-10-06): routing-switch keeps `connected` true (onoff "On") while a connect is still
+# waiting for the server and verification (data.routing.connecting) and for a connect whose process died
+# before verification (data.routing.connect_unfinished). Prints Connecting, Incomplete or nothing; both
+# keys in one gateway read.
+gateway_routing_phase() {
+    local vals=() c="false" u="false"
+    if declare -F conky_gateway_get_many >/dev/null 2>&1; then
+        mapfile -t vals < <(CONKY_GATEWAY_MANY_TIMEOUT=2 CONKY_GATEWAY_MANY_BIN="$BIN" \
+            conky_gateway_get_many "false" data.routing.connecting data.routing.connect_unfinished 2>/dev/null)
+    fi
+    if [[ "${#vals[@]}" -eq 2 ]]; then
+        c="${vals[0]}"; u="${vals[1]}"
+    else
+        c="$(conky_gateway_get_or_default "data.routing.connecting" "false" 2 "$BIN")"
+        u="$(conky_gateway_get_or_default "data.routing.connect_unfinished" "false" 2 "$BIN")"
+    fi
+    if [[ "${c,,}" == "true" ]]; then
+        printf 'Connecting\n'
+    elif [[ "${u,,}" == "true" ]]; then
+        printf 'Incomplete\n'
+    fi
+    return 0
+}
+
 gateway_routing_onoff() {
-    local raw
+    local raw phase
     raw="$(conky_gateway_get_or_default "data.routing.onoff" "Unknown" 2 "$BIN")"
     raw="$(normalize_onoff_value "$raw")"
     case "$raw" in
-        On|Off) printf '%s\n' "$raw" ;;
+        On)
+            phase="$(gateway_routing_phase)"
+            printf '%s\n' "${phase:-On}"
+            ;;
+        Off) printf '%s\n' "$raw" ;;
         *) printf '%s\n' "Unknown" ;;
     esac
 }
@@ -128,6 +156,8 @@ gateway_routing_connected_text() {
     onoff="$(gateway_routing_onoff)"
     if [[ "$onoff" == "On" ]]; then
         echo "Connected"
+    elif [[ "$onoff" == "Connecting" || "$onoff" == "Incomplete" ]]; then
+        echo "$onoff"
     elif [[ "$onoff" == "Off" ]]; then
         echo "Disconnected"
     else
@@ -144,6 +174,8 @@ build_conky_routing_line() {
 
     if [[ "$routing_onoff" == "Off" ]]; then
         routing_protocol="None"
+    elif [[ "$routing_onoff" == "Connecting" || "$routing_onoff" == "Incomplete" ]]; then
+        : # a tunnel is being set up (or was left unverified): its protocol is known and shown
     elif [[ "$routing_onoff" != "On" ]]; then
         routing_onoff="Unknown"
         routing_protocol="Unknown"
@@ -227,7 +259,7 @@ case "$FIELD" in
         routing_onoff="$(gateway_routing_onoff)"
         routing_protocol="None"
         routing_line=""
-        if [[ "$routing_onoff" == "On" ]]; then
+        if [[ "$routing_onoff" == "On" || "$routing_onoff" == "Connecting" || "$routing_onoff" == "Incomplete" ]]; then
             routing_protocol="$(gateway_routing_protocol)"
         fi
         # Gateway helper, not a raw spawn (finding #104): the alias is served

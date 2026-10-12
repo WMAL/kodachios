@@ -149,6 +149,19 @@ dofile(os.getenv(\"HOME\") .. \"/.config/kodachi/conky/lua/gauge-styles.lua\")" 
 reload_conky() {
     echo -e "${BLUE}Reloading Conky...${NC}"
 
+    # Prefer the panel launcher (round 12, 2026-10-06): it starts the gauges from the runtime config at
+    # the computed position AND starts the click-through watcher, so the reloaded panel does not take
+    # mouse clicks meant for the desktop icons under it. The direct start below is the fallback for a
+    # tree without the launcher.
+    local launcher="$CONKY_DIR/scripts/conky-launcher.sh"
+    if [ -f "$launcher" ]; then
+        if bash "$launcher" --restart >/dev/null 2>&1 </dev/null; then
+            echo -e "${GREEN}✓ Conky reloaded${NC}"
+            return 0
+        fi
+        echo -e "${YELLOW}Panel launcher failed; restarting the gauges panel directly${NC}"
+    fi
+
     # Kill existing conky processes running the gauge config
     pkill -f "conkyrc-gauges.conf"
     sleep 0.5
@@ -156,6 +169,10 @@ reload_conky() {
     # Restart conky with the gauge config
     if [ -f "$CONKY_CONFIG" ]; then
         conky -c "$CONKY_CONFIG" &
+        # The click-through watcher for this panel (one per display; a running one keeps its place).
+        if [ -f "$CONKY_DIR/scripts/conky-clickthrough.py" ] && command -v python3 >/dev/null 2>&1; then
+            python3 "$CONKY_DIR/scripts/conky-clickthrough.py" --linger 30 </dev/null >/dev/null 2>&1 &
+        fi
         echo -e "${GREEN}✓ Conky reloaded${NC}"
     else
         echo -e "${RED}✗ Config file not found: $CONKY_CONFIG${NC}"

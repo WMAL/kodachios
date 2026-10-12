@@ -29,7 +29,7 @@ Type=oneshot
 # THREE producers call `snapshot --refresh`, and each one forks 30+ sudo
 # children (see conky-launcher.sh's own comment). Until now only
 # focus-alert.sh locked, so this timer, firing every 90 s, stacked a second
-# full refresh on top of an in-flight one. Measured on <lab-host>:
+# full refresh on top of an in-flight one. Measured on a test VM:
 # two concurrent `snapshot --refresh` from different binary paths, and 1295
 # distinct pids in a 45 s census.
 # The lock file is named after focus-alert for HISTORICAL reasons only. It

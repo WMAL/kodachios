@@ -238,6 +238,29 @@ def onoff(*path):
     return value
 
 
+# Round 12 (2026-10-06): routing-switch keeps routing.connected true while a connect waits for
+# the server and its verification, and after a connect whose process ended before it was
+# verified, so On alone would paint an unverified tunnel green. conky-status publishes the two
+# phases beside it (routing.connecting, routing.connect_unfinished), and the dashboard, the
+# tray, conky and AutoShield already say Connecting or Incomplete for them. The unfinished
+# phase wins if both were ever set together, the same order the dashboard helper uses.
+VPN_CONNECTING = "Connecting, waiting for the server and verification"
+VPN_UNFINISHED = "Incomplete, the connect did not finish (disconnect or reset routing)"
+
+
+def vpn_word():
+    """The VPN reading for the ROUTING row and the vpn line: On, Off, unknown, or the
+    pending phase of a connect that is not verified yet."""
+    word = onoff("routing", "connected")
+    if word != "On":
+        return word
+    if dig("routing", "connect_unfinished") == "Yes":
+        return VPN_UNFINISHED
+    if dig("routing", "connecting") == "Yes":
+        return VPN_CONNECTING
+    return word
+
+
 def joined(*parts):
     kept = [p for p in parts if is_read(p)]
     return ", ".join(kept) if kept else UNKNOWN
@@ -392,7 +415,7 @@ FIREWALL_NO_DAEMON = ("nftables", "iptables")
 def unit_detail(unit):
     """LoadState, ActiveState and MainPID for one systemd unit, unprivileged.
 
-    Deliberately NOT pgrep. Measured on <lab-host> while writing this:
+    Deliberately NOT pgrep. Measured on a test VM while writing this:
     pgrep -f fail2ban-server returned the real pid PLUS the probing shell and
     its ssh peer, because the pattern matches the command line of whatever is
     doing the asking. systemctl show answers the question that was asked.
@@ -459,7 +482,7 @@ def vpn_tunnels():
     """The tunnel counts, in the vocabulary the panel itself uses: ON, UP, OFF.
 
     ON and UP are different questions and the snapshot answers both. Collapsing
-    them lies: measured on <lab-host> while writing this, on_count was 1
+    them lies: measured on a test VM while writing this, on_count was 1
     and up_count was 0, so reporting on_count as "up" printed a tunnel as up
     directly beside "Routing: Off". The named service is listed when the list is
     short enough to read, because "1 on" without a name cannot be acted on.
@@ -537,7 +560,7 @@ FIELDS = {
                           + "   Instances: " + dig("tor", "instances_display")
                           + "   Tor process age: "
                           + dig("system", "process_age", "tor", "value"),
-    "vpn":        lambda: "Routing: " + onoff("routing", "connected")
+    "vpn":        lambda: "Routing: " + vpn_word()
                           + "   Protocol: " + dig("routing", "protocol")
                           + "   Server: " + dig("routing", "server")
                           + "   Up: " + dig("routing", "uptime")
@@ -629,6 +652,16 @@ def state_of(value, invert=False):
     return "neutral"
 
 
+def vpn_state(word):
+    """A connect that did not finish is a warning and one still waiting is neutral; never
+    the lime of a verified tunnel. Everything else follows state_of."""
+    if word == VPN_UNFINISHED:
+        return "warn"
+    if word == VPN_CONNECTING:
+        return "neutral"
+    return state_of(word)
+
+
 def section(title):
     print("#SECTION\t%s" % title)
 
@@ -679,7 +712,8 @@ row("Connectivity", dig("online_info", "online_status", "connectivity"), "neutra
 row("Ping", dig("system", "network", "ping_ms") + " ms", "neutral")
 
 section("ROUTING")
-row("VPN connected", onoff("routing", "connected"))
+_vpn = vpn_word()
+row("VPN connected", _vpn, vpn_state(_vpn))
 row("Protocol", dig("routing", "protocol"), "neutral")
 row("Server", dig("routing", "server"), "neutral")
 row("Tunnel device", dig("routing", "tun_device"), "neutral")

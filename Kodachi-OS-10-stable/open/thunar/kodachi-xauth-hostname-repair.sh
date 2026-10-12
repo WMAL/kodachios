@@ -38,7 +38,7 @@
 # cookie. Root is not in that list, so every root GUI dies with
 # "cannot open display".
 #
-# MEASURED 2026-09-07 on <lab-host>, live ISO <lab-host>, four arms, one run,
+# MEASURED 2026-09-07 on a test VM, live ISO <lab-host>, four arms, one run,
 # same binary, same display, and the SAME COOKIE VALUE in every arm. The X
 # access-control grant for root was removed for the test and restored after, or
 # the run would have been vacuous (it was, the first time: with
@@ -50,7 +50,7 @@
 #     D  negative control, root, nonexistent cookie file        REFUSED
 #
 # Only the entry NAME differed between A and B. Independently reported by
-# <agent> from <lab-host>, reproduced here on a different box.
+# <agent> from a test VM, reproduced here on a different box.
 #
 # THERE IS NO HOSTNAME-INDEPENDENT ENTRY TO WRITE INSTEAD, which is why this is a
 # repair and not a one-time change of the cookie's name. Measured in the same

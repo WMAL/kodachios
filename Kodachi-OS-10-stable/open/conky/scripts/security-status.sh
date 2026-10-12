@@ -14,7 +14,7 @@
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-03-02
 #
 # Description:
@@ -97,20 +97,21 @@ unknown_if_unread() {
     fi
 }
 
-# F19 (2026-09-30): ONE SNAPSHOT READ FOR ALL NINE KEYS, NO PIPELINES.
+# F19 (2026-09-30): ONE SNAPSHOT READ FOR ALL ELEVEN KEYS (NINE THEN), NO PIPELINES.
 #
 # conky-gauges.lua runs `security-status.sh all` every 15 s. Measured on the live
-# <lab-host> VM <lab-host> with a bpftrace fork tree: 560 forks per 120 s, about
+# <lab-host> VM with a bpftrace fork tree: 560 forks per 120 s, about
 # 70 per run, because every key paid its own subshell + stat + jq and every boolean
 # paid `echo | tr | xargs`. This reads the same keys (nine since inspector pass 7 #4
-# added data.dns.dnscrypt_active_known) through
+# added data.dns.dnscrypt_active_known, eleven since round 12 added data.routing.connecting and
+# data.routing.connect_unfinished) through
 # conky_gateway_get_many (one stat, one jq, identical TTL, alias and default rules,
 # per-key fallback when the batch cannot be served) and applies the SAME rules as
 # to_bin and unknown_if_unread below:
 #   a value key missing -> "false"; a *_known key missing -> "false" (unknown);
 #   bool: lowercase, trim, 1|true|on|yes|y -> 1, anything else -> 0;
 #   a 0 whose *_known is not literally "true" -> 2 (unknown), a 1 is never downgraded.
-# If the batch cannot return exactly nine lines, the original per-key path runs.
+# If the batch cannot return exactly eleven lines, the original per-key path runs.
 _ss_bool01() {
     local -n _ss_b_out="$1"
     local _ss_b_v="$2"
@@ -125,6 +126,8 @@ _ss_bool01() {
 }
 
 _SS_BATCHED=0
+_SS_CONNECTING=false
+_SS_UNFINISHED=false
 if [[ -n "$BIN" ]] && declare -F conky_gateway_get_many >/dev/null 2>&1; then
     _SS_MISS="__CONKY_SS_MISS__"
     _ss_vals=()
@@ -132,7 +135,7 @@ if [[ -n "$BIN" ]] && declare -F conky_gateway_get_many >/dev/null 2>&1; then
         conky_gateway_get_many "$_SS_MISS" \
         security-status.auth security-status.vpn security-status.torrified security-status.dns \
         data.auth.authenticated_known data.routing.connected_known data.tor.torrified_known data.dns.dnscrypt_known \
-        data.dns.dnscrypt_active_known \
+        data.dns.dnscrypt_active_known data.routing.connecting data.routing.connect_unfinished \
         2>/dev/null)
     # conky_gateway_bool_01 trims through `xargs`, which also strips quotes and
     # backslashes; a value carrying one takes the per-key path so nothing differs.
@@ -140,7 +143,7 @@ if [[ -n "$BIN" ]] && declare -F conky_gateway_get_many >/dev/null 2>&1; then
     for _ss_v in "${_ss_vals[@]}"; do
         [[ "$_ss_v" == *[\'\"\\]* ]] && _ss_plain=0
     done
-    if (( ${#_ss_vals[@]} == 9 && _ss_plain == 1 )); then
+    if (( ${#_ss_vals[@]} == 11 && _ss_plain == 1 )); then
         _ss_out=()
         for _ss_i in 0 1 2 3; do
             _ss_raw="${_ss_vals[$_ss_i]}"
@@ -170,6 +173,8 @@ if [[ -n "$BIN" ]] && declare -F conky_gateway_get_many >/dev/null 2>&1; then
         VPN="${_ss_out[1]}"
         TORRIFIED="${_ss_out[2]}"
         DNS="${_ss_out[3]}"
+        _SS_CONNECTING="${_ss_vals[9]}"
+        _SS_UNFINISHED="${_ss_vals[10]}"
         _SS_BATCHED=1
     fi
 fi
@@ -190,6 +195,20 @@ if [[ -n "$BIN" && "$DNS" == "0" ]]; then
         DNS=2
     fi
 fi
+fi
+
+# Round 12 (2026-10-06): a connect waiting for the server's handshake keeps `connected` true, so the
+# VPN block would turn green before the server answered. It is drawn amber (2, not yet known to be up)
+# until the handshake completes. The per-key path reads the flag only when it matters.
+if [[ "$VPN" == "1" ]]; then
+    if (( _SS_BATCHED == 0 )); then
+        _SS_CONNECTING="$(conky_gateway_get_or_default "data.routing.connecting" "false" 2 "$BIN")"
+        _SS_UNFINISHED="$(conky_gateway_get_or_default "data.routing.connect_unfinished" "false" 2 "$BIN")"
+    fi
+    _SS_CONNECTING="${_SS_CONNECTING:-false}"
+    _SS_UNFINISHED="${_SS_UNFINISHED:-false}"
+    # A connect still in progress, or one whose process died before verification, is not a VPN that is up.
+    if [[ "${_SS_CONNECTING,,}" == "true" || "${_SS_UNFINISHED,,}" == "true" ]]; then VPN=2; fi
 fi
 
 case "$FIELD" in

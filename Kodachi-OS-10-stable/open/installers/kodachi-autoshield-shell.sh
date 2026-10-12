@@ -37,7 +37,7 @@ set -o pipefail
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-05-23
 #
 # Description:
@@ -85,8 +85,8 @@ done
 # Source: main-info.json (terminal section)
 # DO NOT EDIT MANUALLY - Run pack-kodachi.sh to update these values
 BUILD_VERSION="<lab-host>"  # From: terminal.main_version
-BUILD_NUM="34"          # From: terminal.build_number (auto-incremented)
-BUILD_DATE="2026-10-03"  # From: terminal.last_build_date
+BUILD_NUM="36"          # From: terminal.build_number (auto-incremented)
+BUILD_DATE="2026-10-08"  # From: terminal.last_build_date
 SCRIPT_VERSION="${BUILD_VERSION}.${BUILD_NUM}"
 
 # Color codes for compact display (optimized for black terminal)
@@ -103,7 +103,7 @@ NC='\033[0m' # No Color
 # The header used to print BUILD_VERSION, which only pack-kodachi.sh rewrites. The ISO
 # build copies this file as-is, so the <lab-host> live ISO of 2026-09-04 shipped a header
 # reading "Kodachi OS 9.0.1" while /etc/os-release and every hook binary said <lab-host>
-# (measured 2026-09-06 on <lab-host>). The OS release file is written by the
+# (measured 2026-09-06 on a test VM). The OS release file is written by the
 # branding hook for exactly this purpose, so read it at runtime and keep BUILD_VERSION
 # only as the last fallback and as the terminal-track build stamp on the Build: line.
 detect_os_version() {
@@ -239,7 +239,7 @@ detect_dns_lock_file() {
     # has to exclude every user on the box, and a per-user lock would turn a loud
     # fail-closed skip into a silent concurrent reconfiguration.
     #
-    # The failure this addresses, measured 2026-09-06 on <lab-host>: a
+    # The failure this addresses, measured 2026-09-06 on a test VM: a
     # `sudo ... --force-dns-setup` creates the lock as root with the default 0644, and every
     # later run by the desktop user then fails to open it (EACCES) and skips DNS setup
     # entirely. The fix is to make the shared lock OPENABLE by everyone, not to give each
@@ -1851,7 +1851,16 @@ fetch_system_info() {
         # "wireguard" when the user has multiple VPN paths.
         VPN_SOURCE=$(parse_json "$ROUTING_JSON" ".data.connection_source" || echo "")
         VPN_PROVIDER_NAME=$(parse_json "$ROUTING_JSON" ".data.provider_name" || echo "")
-        if [ "$CONNECTED" = "true" ]; then
+        # Round 12 (2026-10-06): routing-switch keeps `connected` true while a connect is still waiting for
+        # the server and verification (`connecting`) and after a connect whose process died before it was
+        # verified (`connect_unfinished`). Neither is a working VPN, so neither is green.
+        VPN_CONNECTING=$(parse_json "$ROUTING_JSON" ".data.connecting" || echo "false")
+        VPN_UNFINISHED=$(parse_json "$ROUTING_JSON" ".data.connect_unfinished" || echo "false")
+        if [ "$CONNECTED" = "true" ] && [ "$VPN_CONNECTING" = "true" ]; then
+            NET_STATUS="${YELLOW}Connecting ${PROTOCOL}${NC}"
+        elif [ "$CONNECTED" = "true" ] && [ "$VPN_UNFINISHED" = "true" ]; then
+            NET_STATUS="${RED}${PROTOCOL} connect did not finish${NC}"
+        elif [ "$CONNECTED" = "true" ]; then
             if [ -n "$VPN_PROVIDER_NAME" ] && [ "$VPN_PROVIDER_NAME" != "null" ]; then
                 NET_STATUS="${GREEN}${PROTOCOL} via ${VPN_PROVIDER_NAME}${NC}"
             elif [ "$VPN_SOURCE" = "kodachi" ]; then
@@ -2083,7 +2092,11 @@ local_system_encryption_detected() {
         return 0
     fi
 
-    root_source=$(findmnt -n -o SOURCE / 2>/dev/null | head -1)
+    # A stacked mount point lists every mount on it, in mount order, and the one in use is the
+    # LAST row; `head -1` named the covered one.
+    # -v (--nofsroot): for a btrfs subvolume or a bind mount findmnt appends "[/dir]" to SOURCE,
+    # which is no device name, and every probe below failed on it.
+    root_source=$(findmnt -nv -o SOURCE / 2>/dev/null | tail -n 1)
     [ -n "$root_source" ] || return 1
 
     root_resolved=$(readlink -f "$root_source" 2>/dev/null || echo "$root_source")

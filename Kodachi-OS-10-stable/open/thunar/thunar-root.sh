@@ -14,7 +14,7 @@
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-08-26
 #
 # Description:
@@ -124,7 +124,7 @@ XAUTH="${XAUTHORITY:-$HOME/.Xauthority}"
 # list, so this is exactly the "cannot open display" that killed both Open as
 # Root and Edit as Root on the <lab-host> live ISO.
 #
-# MEASURED 2026-09-07 on <lab-host>, four arms, same binary, same display,
+# MEASURED 2026-09-07 on a test VM, four arms, same binary, same display,
 # SAME cookie value, with the X grant for root removed for the test and restored
 # after (with it in place every arm connects and the run is vacuous, which is
 # how the first attempt went):
@@ -137,7 +137,7 @@ XAUTH="${XAUTHORITY:-$HOME/.Xauthority}"
 # re-randomised at any time from the dock, so a boot-time repair goes stale. The
 # helper is idempotent and additive (proven: three runs, entry count unchanged),
 # and it grants nothing new, it copies a value already in the caller's own file.
-# Reported by <agent> from <lab-host>, reproduced independently.
+# Reported by <agent> from a test VM, reproduced independently.
 if [ -n "$XAUTH" ] && command -v kodachi-xauth-hostname-repair.sh >/dev/null 2>&1; then
     XAUTHORITY="$XAUTH" kodachi-xauth-hostname-repair.sh --quiet >/dev/null 2>&1 || true
 fi
@@ -221,7 +221,7 @@ if ! kill -0 "$CHILD" 2>/dev/null; then
     # THE STALE-INSTANCE RESIDUAL, AND WHY THE F2 REMEDY IS THE WRONG ONE HERE.
     # root_instances() is EXISTENCE-based with no BEFORE-sample, which is the
     # defect fixed on the sandbox path in F2. It is NOT fixable the same way.
-    # MEASURED on <lab-host>, 2026-08-26: a genuine root hand-off leaves the
+    # MEASURED on a test VM, 2026-08-26: a genuine root hand-off leaves the
     # root instance at the SAME pid it had before the click (3840108 before and
     # after), because the new process talks to the live instance and exits. So a
     # "must be a NEW pid" guard would make every legitimate second click fail,

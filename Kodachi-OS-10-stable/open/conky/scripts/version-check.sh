@@ -14,7 +14,7 @@
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-03-02
 #
 # Description:
@@ -94,6 +94,15 @@ get_status() {
 
     if [[ "$local_version" == "N/A" || "$remote_version" == "N/A" ]]; then
         echo "N/A"
+        return 0
+    fi
+
+    # A carried ISO edition whose build is UNKNOWN (system-meta.sh prints "unknown" after an
+    # upgrade stripped the ISO stamp and the build number could not be recovered) cannot be
+    # proven current, and `sort -V` would rank "unknown" above every number and call it
+    # current. Offer the update instead: the published ISO is the only build known here.
+    if [[ "${local_version,,}" == "unknown" ]]; then
+        echo "update"
         return 0
     fi
 

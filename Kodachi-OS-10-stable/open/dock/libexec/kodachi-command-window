@@ -1312,7 +1312,7 @@ def executable_is_available(program):
 
 # The login user's PATH on Debian has no sbin directory, and lynis, ufw and
 # chkrootkit live in /usr/sbin. A presence check through shutil.which() alone
-# reported "Not detected" for all three on <lab-host> with all three
+# reported "Not detected" for all three on a test VM with all three
 # installed (measured 2026-09-05), so the Verify window's Full Audit and
 # Scan Security Findings rows were greyed out on a machine that could run them.
 # The rows RUN through sudo, which resolves sbin itself, so presence has to be
@@ -1632,7 +1632,7 @@ def launch(command, key=None, parameters=None, stdin_values=None):
 # The fix is a targeted RE-COLLECTION after a mutation, and it is deliberately
 # none of the three obvious alternatives:
 #   - not a blanket --refresh on the read path: a fresh 8 adapter snapshot was
-#     measured at 10.45s on <lab-host>, so that puts a ten second freeze in
+#     measured at 10.45s on a test VM, so that puts a ten second freeze in
 #     front of every status click,
 #   - not deleting the cache file, which converts the next read into that same
 #     ten second wait and races anything already reading it,
@@ -2566,7 +2566,7 @@ def _mark_touched(widget, *_args):
 # <agent>, ROUND 3 finding 2: "the key `data` is absent" was too wide a
 # door. It admitted any flat producer, present or future, and a flat shape is
 # usually a producer that failed before it built its envelope rather than one
-# that never had it. Measured on <lab-host>, 2026-08-23, over all 31
+# that never had it. Measured on a test VM, 2026-08-23, over all 31
 # non-systemd switch check commands in the product: exactly ONE is flat,
 # `online-auth license-status`, and the other 30 use the standard envelope. So
 # the allowlist is that one name, and it is a name, not a shape test.
@@ -2584,7 +2584,7 @@ def read_switch(key):
     A bare "unknown" pill could not tell those apart, and they are not the same
     fact: "no status command exists" is a gap in the product, while "refused" is
     something the USER can act on. Six of six Devices switches read unknown on
-    <lab-host> purely because 47 binaries there are not root-owned.
+    a test VM purely because 47 binaries there are not root-owned.
 
     THE CONTRACT, read out of health-control's own source rather than guessed:
     `offline-<thing> --action check --json` returns the standard envelope whose
@@ -2671,7 +2671,7 @@ def read_switch(key):
     # confident OFF switch from an ERROR, which is the same class of defect as
     # the prose sniffing this function's docstring was written about.
     #
-    # MEASURED on <lab-host>, 2026-08-23, all 31 non-systemd switch check
+    # MEASURED on a test VM, 2026-08-23, all 31 non-systemd switch check
     # commands in the product: 31 of 31 exit 0 AND carry status "success",
     # `tor-switch verify-tor-dns` included, which was the one I expected to
     # report a nonzero exit for a negative answer and does not. So this gate
@@ -2698,7 +2698,7 @@ def read_switch(key):
                     for token in command.split())):
         # NOT EVERY PRODUCER WRAPS ITS PAYLOAD, AND ONE OF THEM IS A SWITCH.
         #
-        # Measured on <lab-host>, 2026-08-23: `online-auth license-status
+        # Measured on a test VM, 2026-08-23: `online-auth license-status
         # --json` emits its fields at the TOP LEVEL (has_license, hardware_id,
         # tier_claim_v2, message, status) with no `data` object anywhere, unlike
         # `online-auth check-login --json`, which does use the standard envelope.
@@ -2741,7 +2741,7 @@ def read_switch(key):
     # note above this function was written about.
     #
     # So each entry below was read out of that command's actual --json payload
-    # on <lab-host> and chosen to MIRROR WHAT ITS OWN Enable/Disable PAIR
+    # on a test VM and chosen to MIRROR WHAT ITS OWN Enable/Disable PAIR
     # DOES, which is the only thing the switch is allowed to claim:
     #   ipv6-status         ipv6_enabled           the single top-level boolean
     #   dpms-status         dpms_enabled           the row is "Screen blanking
@@ -2780,7 +2780,7 @@ def read_switch(key):
         # could not be parsed. I published the wrong mechanism for a fix that
         # works, which is only possible because the outcome agreed with me.
         "coldboot-defense-status": "protection_active",
-        # THE TWO ACCOUNT SWITCHES, both measured on <lab-host> 2026-08-23.
+        # THE TWO ACCOUNT SWITCHES, both measured on a test VM 2026-08-23.
         #
         #   check-login     -> {"data":{"is_logged_in":true,"message":
         #                       "Session is valid","status":"success"}}
@@ -2816,7 +2816,7 @@ def read_switch(key):
         # THE SWITCH'S PAIR ADDS AND REMOVES THE SYSTEM DNS REDIRECT, so the
         # only state it may claim is whether that redirect exists. The two
         # probes (`direct_method`, `port_method`) prove that Tor's DNSPort
-        # answers, which is a different question: measured on <lab-host>,
+        # answers, which is a different question: measured on a test VM,
         # 2026-09-05, resolv.conf pointed at dnscrypt on 127.0.0.1, no redirect
         # rule existed, both probes answered true and this switch read ON.
         #
@@ -3293,7 +3293,7 @@ def build_declarative(name, target=None, parent=None):
     # These were inside the section loop, so every section started a FRESH
     # Gtk.RadioButton group. A group always holds exactly one active member, so
     # a window with three choice sections had THREE active radios, and Apply
-    # appended one command per group. Measured on <lab-host> by
+    # appended one command per group. Measured on a test VM by
     # <agent> driving the real footer button: the vpn window ran
     #     sudo routing-switch connect amneziawg
     #     sudo routing-switch connect wireguard
@@ -3364,7 +3364,7 @@ def build_declarative(name, target=None, parent=None):
                 # This used to call read_switch() inline, so the window did not
                 # appear until every status command in it had run to completion,
                 # one after another, on the UI thread. Measured on
-                # <lab-host> once the auth chain was repaired and the
+                # a test VM once the auth chain was repaired and the
                 # commands actually ran: one `health-control offline-wifi
                 # --action check --json` costs 1579ms, and the windows took
                 #     harden 2.2s   status 2.7s   identity 6.4s
@@ -3384,7 +3384,7 @@ def build_declarative(name, target=None, parent=None):
                 # start life as "pending": paint_strip() counts pending cells
                 # and the Hardening window said "READING 1 of 7" for as long as
                 # it stayed open, the 1 being "Answer ping", which has no check
-                # by design (measured 2026-09-05 on <lab-host>).
+                # by design (measured 2026-09-05 on a test VM).
                 cell = {"state": None, "why": "pending" if has_check else "no-status"}
                 widget = ui.switch_row(
                     card, row["name"], row.get("note"), leading=leading,
@@ -3664,7 +3664,7 @@ def build_declarative(name, target=None, parent=None):
                 # ui.state_toggle() already makes for the switches next door.
                 # THE CHIP STRIP GETS ITS OWN LINE, AND THAT IS A WIDTH FIX.
                 #
-                # MEASURED 2026-09-04 on the live ISO, <lab-host>,
+                # MEASURED 2026-09-04 on the live ISO, a test VM,
                 # DISPLAY=:0, sandbox page at its real opening width of 1064,
                 # every child of one catalog row:
                 #
@@ -4786,7 +4786,7 @@ def _human_json_lines(value, level=0):
         # Blank strings are padding, never information: conky-status keeps
         # data.dns.nameservers at exactly three slots for the panel, so the
         # Status window's "DNS Servers In Use" row printed "• 127.0.0.1" and
-        # then two empty bullets (measured 2026-09-05 on <lab-host>).
+        # then two empty bullets (measured 2026-09-05 on a test VM).
         value = [child for child in value
                  if not (isinstance(child, str) and not child.strip())]
         if not value:
@@ -4982,7 +4982,7 @@ REPO_UNCHANGED_EXIT = 3
 def looks_auth_refused(text):
     """Was this command REFUSED before it ran, rather than run and failed?
 
-    Measured on <lab-host>: 47 binaries under /opt/kodachi/dashboard/hooks
+    Measured on a test VM: 47 binaries under /opt/kodachi/dashboard/hooks
     are not root-owned, so every auth-gated verb answers
         "Authentication failed: Trusted authentication path is not root-owned"
     and the switch that asked reads UNKNOWN. The operator saw six of six Devices
@@ -5040,7 +5040,7 @@ def classify_exit(code, text, action=False):
     terminal failed state even when the command printed useful diagnostics.
 
     A NON-ZERO EXIT IS NOT AUTOMATICALLY A FAILURE HERE. Measured on
-    <lab-host>: `deps-checker check-all` exits 1 after 15.9s because it
+    a test VM: `deps-checker check-all` exits 1 after 15.9s because it
     FOUND missing dependencies, and `permission-guard scan` exits 1 because it
     FOUND three files needing attention. In both cases the exit code IS the
     answer and the payload is complete. Painting those the same colour as a
@@ -5275,7 +5275,7 @@ def make_runner(win, row, target=None, pill_slot=None, row_box=None):
         #
         # shell() used to be called straight from the click handler, which is the
         # GTK main loop. `workflow-manager state` takes 20.2s and
-        # `deps-checker check-all` 15.9s, measured on <lab-host>, and for
+        # `deps-checker check-all` 15.9s, measured on a test VM, and for
         # every one of those seconds the whole window was frozen: no scrolling,
         # no other button, no close. The operator hit it immediately, in his
         # words "the window freezed i cant click anything after clicking on the
@@ -5288,7 +5288,7 @@ def make_runner(win, row, target=None, pill_slot=None, row_box=None):
         # A BARE "working" IS INDISTINGUISHABLE FROM A HUNG BUTTON.
         #
         # `integrity-check check-signatures --json` takes 149 SECONDS on
-        # <lab-host> (measured, 30 binaries). For 149 seconds the only
+        # a test VM (measured, 30 binaries). For 149 seconds the only
         # feedback was the word "working", which is exactly what a dead button
         # would show, and the operator reported those rows as "some buttons
         # return nothing they dont work". A running clock is the difference

@@ -14,7 +14,7 @@
 # Contact: warith@digi77.com
 #
 # Author: Warith Al Maawali
-# Version: 9.0.1
+# Version: the Kodachi release this file ships in (no per-file number)
 # Last updated: 2026-03-02
 #
 # Description:
@@ -333,6 +333,23 @@ PY
     esac
 }
 
+# A CARRIED ISO EDITION WHOSE BUILD IS UNKNOWN PRINTS "unknown", NOT A NUMBER (2026-10-04).
+#
+# An apt upgrade used to replace build-meta.json (kodachi-assets payload) and erase the ISO's
+# stamp; the kodachi-assets postinst now re-applies it from /etc/kodachi/iso-edition.json.
+# On an install an earlier upgrade already stripped, the postinst repairs the EDITION but the
+# ISO build number may be gone for good, so it marks editions.<track>.build_unknown = true and
+# withdraws the pack's frozen counter. Every fallback below that marker would print a number
+# that is not this machine's ISO build (the pack's counter, or the binary version), so the
+# honest answer is "unknown"; version-check.sh reads it as "update available".
+edition_build_unknown() {
+    local want="${1:-}" flag=""
+    case "$want" in terminal|desktop) ;; *) return 1 ;; esac
+    flag="$(get_build_meta_value "$want" "build_unknown")"
+    case "${flag,,}" in true|1|yes) return 0 ;; esac
+    return 1
+}
+
 if [[ -n "${BIN:-}" ]] \
     && declare -F conky_gateway_get_many >/dev/null 2>&1 \
     && declare -F _conky_snapshot_is_fresh >/dev/null 2>&1 \
@@ -394,6 +411,7 @@ case "$FIELD" in
         ;;
     terminal_cur)
         edition_applicable "terminal" || { echo "N/A"; exit 0; }
+        edition_build_unknown "terminal" && { echo "unknown"; exit 0; }
         first_non_na \
             "$(get_build_meta_value "terminal" "nightly_version")" \
             "$(compose_version_from_keys "system-meta.terminal-cur" "system-meta.terminal-nb")" \
@@ -414,6 +432,7 @@ case "$FIELD" in
             "$(get_key "data.versions.terminal.on" "N/A")"
         ;;
     terminal_nb)
+        edition_build_unknown "terminal" && { echo "unknown"; exit 0; }
         first_non_na \
             "$(get_build_meta_value "terminal" "build_number")" \
             "$(get_key "system-meta.terminal-nb" "N/A")" \
@@ -421,6 +440,7 @@ case "$FIELD" in
         ;;
     desktop_cur)
         edition_applicable "desktop" || { echo "N/A"; exit 0; }
+        edition_build_unknown "desktop" && { echo "unknown"; exit 0; }
         first_non_na \
             "$(get_build_meta_value "desktop" "nightly_version")" \
             "$(compose_version_from_keys "system-meta.desktop-cur" "system-meta.desktop-nb")" \
@@ -441,6 +461,7 @@ case "$FIELD" in
             "$(get_key "data.versions.desktop.on" "N/A")"
         ;;
     desktop_nb)
+        edition_build_unknown "desktop" && { echo "unknown"; exit 0; }
         first_non_na \
             "$(get_build_meta_value "desktop" "build_number")" \
             "$(get_key "system-meta.desktop-nb" "N/A")" \

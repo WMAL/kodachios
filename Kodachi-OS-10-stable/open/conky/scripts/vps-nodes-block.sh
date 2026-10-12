@@ -71,7 +71,7 @@ while IFS=$'\t' read -r disp status torvis country; do
 done < <(printf '%s' "$arr" | jq -r '.[]? | [.vpsdisplay, .status, .torvisible, .country] | @tsv' 2>/dev/null)
 
 # A BLANK SECTION IS NOT A STATUS (same class as the ai-agents fix). Measured on
-# <lab-host>, 2026-09-05: the fleet endpoint answered five nodes all carrying
+# a test VM, 2026-09-05: the fleet endpoint answered five nodes all carrying
 # vpsdisplay "Off" and an empty country, every row was skipped above, and the
 # VPS NODES header sat over nothing. Say so in one grey row, so the user can tell
 # "no node is reachable right now" from "the panel is broken".

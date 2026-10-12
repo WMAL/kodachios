@@ -31,12 +31,13 @@ bool_onoff() {
     *) printf 'Off' ;;
   esac
 }
-# ONE SNAPSHOT READ FOR ALL EIGHTEEN KEYS, NOT EIGHTEEN. Live-ISO gaps b21/b25, measured
+# ONE SNAPSHOT READ FOR ALL TWENTY KEYS, NOT TWENTY. Live-ISO gaps b21/b25, measured
 # 2026-09-04 on testvm-kodachi-0425b0 at load 0.5: `route-mode.sh mode` cost 112 forks and
 # 298 ms per run, the single most expensive directive in conkyrc-security.conf, and it runs
 # every 17 seconds (about 400 forks a minute on its own). Every one of those forks was the
 # per-key gateway path (stat + jq + subshells) repeated once per key (twelve keys then,
-# eighteen since the `_known` companions) over the same file.
+# eighteen since the `_known` companions, twenty since round 12 added data.routing.connecting and
+# data.routing.connect_unfinished) over the same file.
 # conky_gateway_get_many reads the snapshot once for all keys with identical TTL, alias and
 # absent-means-default semantics, and falls back to per-key reads whenever the batch cannot
 # be served. Defaults differ per key, so the batch uses one sentinel and the per-key default
@@ -49,6 +50,8 @@ ROUTE_KEYS=(
   data.dns.dnscrypt_known data.dns.dnscrypt_onoff
   data.routing.connected_known data.tor.torrified_known data.tor.tor_dns_known
   data.tor.running_known
+  data.routing.connecting
+  data.routing.connect_unfinished
 )
 # The five `_known` defaults are "false" (round 3c, R4, 2026-10-01). They used to be
 # "true" so a snapshot written before those fields existed kept the old On/Off rendering,
@@ -59,12 +62,12 @@ ROUTE_KEYS=(
 # writes carries these fields, so an absent one now means "not read": Unknown.
 # conky-status publishes dnscrypt_known false (with null booleans and dnscrypt_onoff
 # "Unknown") when its DNSCrypt readback failed.
-ROUTE_DEFAULTS=(false None "" "" false Off false false false false N/A N/A false "" false false false false)
+ROUTE_DEFAULTS=(false None "" "" false Off false false false false N/A N/A false "" false false false false false false)
 ROUTE_ABSENT="__CONKY_ROUTE_ABSENT__"
 route_vals=()
 if declare -F conky_gateway_get_many >/dev/null 2>&1; then
-  # The batch's own fallback forwards these, so a stale snapshot costs the same eighteen
-  # per-key reads with the once-resolved $BIN that the old loop cost, not eighteen resolutions.
+  # The batch's own fallback forwards these, so a stale snapshot costs the same twenty
+  # per-key reads with the once-resolved $BIN that the old loop cost, not twenty resolutions.
   mapfile -t route_vals < <(CONKY_GATEWAY_MANY_TIMEOUT=2 CONKY_GATEWAY_MANY_BIN="$BIN" conky_gateway_get_many "$ROUTE_ABSENT" "${ROUTE_KEYS[@]}" 2>/dev/null)
 fi
 if [[ "${#route_vals[@]}" -ne "${#ROUTE_KEYS[@]}" ]]; then
@@ -82,7 +85,7 @@ for _i in "${!ROUTE_KEYS[@]}"; do
     route_vals[$_i]="${ROUTE_DEFAULTS[$_i]}"
   fi
 done
-# Round 4 (V8, measured on <lab-host>, 2026-10-01): when the snapshot predates the
+# Round 4 (V8, measured on a test VM, 2026-10-01): when the snapshot predates the
 # last state change, the gateway answers EACH key with its own `conky-status get`, so a
 # value and its `_known` companion are two reads seconds apart. During the collection that
 # follows a torrify the value's read timed out (absent, so its default `false`) while the
@@ -118,6 +121,11 @@ vpn_known="${route_vals[14]}"
 torrified_known="${route_vals[15]}"
 tor_dns_known="${route_vals[16]}"
 tor_running_known="${route_vals[17]}"
+# Round 12 (2026-10-06): true while a connect waits for the server's handshake. routing-switch keeps
+# `connected` true then, so without this the row said the VPN was up before the server had answered.
+vpn_connecting="${route_vals[18]}"
+# A connect whose process died before the server answered: the connection was never verified.
+vpn_unfinished="${route_vals[19]}"
 # A null boolean reaches this script as its own default (`false`), so the `_known`
 # companion is the only way to tell "measured off" from "not measured". Positive
 # evidence is never overridden: only an Off is downgraded to Unknown.
@@ -131,6 +139,11 @@ demote_unread() {
   fi
 }
 vpn_on="$(demote_unread "$(bool_onoff "$vpn_connected")" "$vpn_known")"
+if [[ "$vpn_on" == "On" && "${vpn_connecting,,}" == "true" ]]; then
+  vpn_on="Connecting"
+elif [[ "$vpn_on" == "On" && "${vpn_unfinished,,}" == "true" ]]; then
+  vpn_on="Incomplete"
+fi
 torrify_on="$(demote_unread "$(bool_onoff "$torrified")" "$torrified_known")"
 tor_daemon_on="$(demote_unread "$(bool_onoff "$tor_onoff")" "$tor_running_known")"
 tor_dns_on="$(demote_unread "$(bool_onoff "$tor_dns")" "$tor_dns_known")"
@@ -156,6 +169,10 @@ elif [[ "$torrify_on" == "On" ]]; then
   mode="Torified"
 elif [[ "$vpn_on" == "On" ]]; then
   mode="$vpn_protocol"
+elif [[ "$vpn_on" == "Connecting" ]]; then
+  mode="Connecting ${vpn_protocol}"
+elif [[ "$vpn_on" == "Incomplete" ]]; then
+  mode="Incomplete ${vpn_protocol}"
 elif [[ "$torrify_on" == "Unknown" || "$vpn_on" == "Unknown" ]]; then
   mode="Unknown"
 fi

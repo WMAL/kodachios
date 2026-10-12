@@ -40,3 +40,10 @@ TimeoutStartSec=90
 # Reap every helper the reads left behind when the oneshot ends.
 KillMode=control-group
 LogLevelMax=notice
+# Round 11 B5 (2026-10-03): a Kodachi state change kicks this unit with
+# `systemctl restart --no-block` while it may still be activating (cli-core
+# state_change.rs), which ends the running collection with SIGTERM ON PURPOSE.
+# Without this line every such kick was logged at warning level as a unit
+# FAILURE ("Failed with result 'signal'", 13 and 15 times per boot in a real
+# user's journal), which defeats LogLevelMax=notice above.
+SuccessExitStatus=SIGTERM
