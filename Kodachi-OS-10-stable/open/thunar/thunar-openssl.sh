@@ -133,7 +133,7 @@ fi
 # defect in two other scripts that bind it from $OPTARG. I then fixed those two
 # and shipped it a third time HERE, in the file where I had originally done the
 # proving, because that pass keyed on `$OPTARG` rather than on "reaches Pango".
-# Found by <agent>'s independent paren-balanced census with a taint trace,
+# Found by a reviewer's independent paren-balanced census with a taint trace,
 # after two of my own detectors had declared the class closed. A safe-list entry is
 # (file, line, binding), and clearing a class needs a census of the SINK, not of
 # the producing idiom you happened to fix last.

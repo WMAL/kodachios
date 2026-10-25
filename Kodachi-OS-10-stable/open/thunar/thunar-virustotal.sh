@@ -77,7 +77,7 @@ NAME="$(basename -- "$FILEPATH")"
 # block, so a 14-byte file was displayed as "(4.0K)" right next to its SHA-256.
 # For a dialog whose entire argument is "this hash identifies the exact file you
 # hold", printing a number that is not the file's size undercuts the one claim it
-# is making. Measured by <agent> on the <lab-host> live ISO.
+# is making. Measured on the <lab-host> live ISO.
 # numfmt is coreutils and is present wherever du is, but fall back to raw bytes
 # rather than to nothing if it ever is not.
 SIZE_BYTES="$(stat -c %s -- "$FILEPATH" 2>/dev/null)"

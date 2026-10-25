@@ -84,7 +84,7 @@ case "$SCHED" in
     *)
         # SAY WHAT THE UNIT ACTUALLY IS, DO NOT ASSERT WHAT THE IMAGE INTENDED.
         # This used to state flatly that "Kodachi's minimal boot profile masks it
-        # deliberately". Measured on the <lab-host> live ISO by <agent>:
+        # deliberately". Measured on the <lab-host> live ISO:
         #     systemctl is-enabled cups  ->  disabled     NOT masked
         #     systemctl is-active  cups  ->  inactive
         # Only a COMMENT in gui-xfce.list.chroot claims cups is masked; nothing in

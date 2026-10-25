@@ -2,7 +2,7 @@
   "schema_version": "1.1",
   "id": "emergency-panic-medium",
   "name": "emergency-panic-medium",
-  "description": "Emergency medium panic mode: kill network, terminate processes, clear memory, unmount devices. Uses base-auth-check profile for authentication.",
+  "description": "Emergency medium panic mode: kill network, clear clipboard, terminate non-essential processes, clear memory, unmount devices, lock screen. Uses base-auth-check profile for authentication.",
   "metadata": {
     "created": "2025-10-08T00:00:00Z",
     "modified": "2025-10-20T00:00:00Z",
@@ -61,7 +61,7 @@
         "destructive": true,
         "workflow_safe": false,
         "shell_safe": true,
-        "confirm_copy": "Confirm 'RUN {id}' before this step: IMMEDIATE medium panic mode with CONFIRMATION. Actions: Kill network, clear clipboard, terminate non-essential processes, clear memory, unmount devices, lock screen. Requires manual system restart to fully restore.",
+        "confirm_copy": "Confirm 'RUN {id}' before this step: IMMEDIATE medium panic mode with CONFIRMATION. Actions: Kill network, clear clipboard, terminate non-essential processes, clear memory, unmount devices, lock screen. Run 'sudo health-control panic-recover' to restore the saved firewall, services and interfaces; ended processes, cleared memory and unmounted devices are not brought back.",
         "rollback_hint": "Use a verified backup or the operation-specific recovery workflow; effects may be irreversible."
       },
       "command_id": "rust.health-control.panic-medium",
@@ -71,7 +71,7 @@
         "/opt/kodachi/dashboard/hooks/health-control",
         "panic-medium"
       ],
-      "description": "IMMEDIATE medium panic mode with CONFIRMATION. Actions: Kill network, clear clipboard, terminate non-essential processes, clear memory, unmount devices, lock screen. Requires manual system restart to fully restore."
+      "description": "IMMEDIATE medium panic mode with CONFIRMATION. Actions: Kill network, clear clipboard, terminate non-essential processes, clear memory, unmount devices, lock screen. Run 'sudo health-control panic-recover' to restore the saved firewall, services and interfaces; ended processes, cleared memory and unmounted devices are not brought back."
     },
     {
       "id": 6,

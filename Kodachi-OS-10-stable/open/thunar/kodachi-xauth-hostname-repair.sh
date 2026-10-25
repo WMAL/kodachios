@@ -50,7 +50,7 @@
 #     D  negative control, root, nonexistent cookie file        REFUSED
 #
 # Only the entry NAME differed between A and B. Independently reported by
-# <agent> from a test VM, reproduced here on a different box.
+# a reviewer from a test VM, reproduced here on a different box.
 #
 # THERE IS NO HOSTNAME-INDEPENDENT ENTRY TO WRITE INSTEAD, which is why this is a
 # repair and not a one-time change of the cookie's name. Measured in the same

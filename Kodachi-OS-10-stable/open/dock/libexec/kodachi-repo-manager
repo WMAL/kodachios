@@ -112,7 +112,7 @@ def source_uri_has_userinfo(uri):
 DRY = os.environ.get("KODACHI_DRY_RUN") == "1"
 HELPER = "/usr/local/libexec/kodachi/kodachi-repo-apt"
 
-# G64: THE WINDOW COULD SIT BUSY FOREVER. Reported by <agent>,
+# G64: THE WINDOW COULD SIT BUSY FOREVER. Reported in review,
 # 2026-08-23. `set_busy(True)` makes every button in the window insensitive,
 # `run_helper` early-returns while `self.busy`, and busy is cleared in exactly
 # one place, `finish`, reached only through the worker's `finally`. A `finally`
@@ -234,7 +234,7 @@ MAINTENANCE_ACTIONS = (
     # then accepts that removal without asking. The claim was already wrong
     # before this change, and this change made it worse by routing every
     # machine with broken dependencies to this button from the Updates page.
-    # Found by <agent>, 2026-08-30.
+    # Found in review, 2026-08-30.
     #
     # `--no-remove` was the other candidate and it is the wrong one HERE: it
     # would make the repair fail on exactly the machine that needs it most,
@@ -408,7 +408,7 @@ PROGRESS_PREFIXES = ("dlstatus:", "pmstatus:", "pmconffile:", "pmerror:",
 # READ THE CONSEQUENCE CAREFULLY, BECAUSE THE FIRST VERSION OF THIS COMMENT GOT
 # IT WRONG AND SAID THE WINDOW "OPENED 3px NARROWER THAN IT CAN ACTUALLY BE
 # DRAWN". Nothing opened narrow and nothing was clipped. GTK3 will not map a
-# toplevel below its content minimum (<agent> proved it with a positive
+# toplevel below its content minimum (a reviewer proved it with a positive
 # control on 2026-08-26), so the window simply OPENED AT 943 and could always be
 # dragged to 943. The old wording was also self-contradictory on its own terms:
 # a window cannot fail to reach the size it opens at.
@@ -628,7 +628,7 @@ COLUMNS = [
 ]
 
 # TABLE_WIDTH USED TO SIT HERE, AND IT DIED WITH THE TREEVIEW THAT READ IT.
-# <agent> 2026-08-21: after the storefront conversion nothing in the
+# Found in review 2026-08-21: after the storefront conversion nothing in the
 # product read it, and the only survivors were three contracts and one sabotage
 # arm, so the tests were the sole thing keeping it alive and were reporting
 # that as coverage. That is precisely the STATE_TONE shape this file called out
@@ -648,7 +648,7 @@ COLUMNS = [
 # ordering has to be an explicit control or it is simply lost.
 #
 # FOUR KEYS AND BOTH DIRECTIONS, NOT THE MOCKUP'S THREE. Audited by
-# <agent> 2026-08-21: the mockup draws three chips, the TreeView
+# a reviewer 2026-08-21: the mockup draws three chips, the TreeView
 # reached SIX orders, and "three chips replace column-click sorting" read as
 # parity because 3 equals 3. `set_headers_visible(True)` plus
 # `column.set_sort_column_id(index)` in the column loop gave three distinct
@@ -952,7 +952,7 @@ def fingerprint_groups(value):
     unbroken hex. So on a perfectly healthy machine the two rows LOOKED
     different, which is the failure state, and the comparison the code does
     correctly (`.replace(" ", "").upper()`) was invisible on screen. Found by
-    <agent> 2026-08-22, G1.
+    a reviewer 2026-08-22, G1.
 
     PER LINE, NOT OVER THE WHOLE STRING, and that is the trap in this function
     rather than an embellishment. The `extra-keys` state joins several
@@ -989,7 +989,7 @@ def installed_repository_key(path=None):
     helper the file can carry the pinned key AND an attacker key: apt verifies
     the attacker's InRelease perfectly happily, the catalog loads, and the one
     block on the page that is about TRUST said everything was fine. Found by
-    <agent> 2026-08-21, who also pointed out that the Sources page two
+    a reviewer 2026-08-21, who also pointed out that the Sources page two
     thousand lines away already reads the real per-stanza `signed_by`, so the
     product held two predicates for one question and they disagreed in the
     direction that reassures.
@@ -1025,7 +1025,7 @@ def installed_repository_key(path=None):
     # traceback goes to a console nobody is reading. `/tmp` on this product is
     # a tmpfs shared with the whole session, so "no space left on device" is a
     # state that happens rather than a theoretical one. Found by
-    # <agent> 2026-08-22, G3.
+    # a reviewer 2026-08-22, G3.
     #
     # FOLDED INTO THE EXISTING BRANCH, NOT GIVEN A STATE OF ITS OWN, for the
     # same reason the timeout below was: "gpg could not be run" is precisely
@@ -1067,7 +1067,7 @@ def installed_repository_key(path=None):
     # key> IN THAT ORDER: putting the pinned key first is exactly what
     # defeated the old count-free pin. So the first primary IS the pinned one,
     # and a reader comparing the two rows saw agreement while the code was
-    # reading the file perfectly. Found by <agent> 2026-08-22, A1.
+    # reading the file perfectly. Found in review 2026-08-22, A1.
     # `len(fingerprints) < primaries` takes the FIRST fpr line after each pub
     # and ignores any further ones for that same key.
     primaries, fingerprints, at_primary = 0, [], False
@@ -1088,7 +1088,7 @@ def installed_repository_key(path=None):
     # which one was false: "carries 0 primary keys, so apt trusts every one of
     # them", a claim of membership in an empty set, over a hash row saying
     # "not a keyring gpg can read" when gpg had read it perfectly and exited
-    # 0. Found by <agent> 2026-08-22, who did not reason it out: they
+    # 0. Found by a reviewer 2026-08-22, who did not reason it out: they
     # lifted this function by AST and fed it real gpg 2.4.7 artifacts. A
     # SECRET-key export and a DETACHED SIGNATURE both make gpg exit 0 and emit
     # no `pub:` line at all, so this branch is reachable without anything
@@ -1121,7 +1121,7 @@ def apt_parser_can_use_keyring(path=None, channel=None):
 
     WHY A SECOND PARSER AT ALL. `installed_repository_key` asks gpg. apt does
     not use gpg: it passes `Signed-By` to gpgv, whose keyring reader is more
-    permissive. Measured 2026-08-22 by <agent>, gpg/gpgv 2.4.7, two
+    permissive. Measured 2026-08-22, gpg/gpgv 2.4.7, two
     throwaway ed25519 keys, six fixtures, both controls: a MALFORMED marker
     packet (`0xCA` with a wrong body length, and `0xC8` and `0xCB` do it too)
     spliced between two keys makes `gpg --show-keys` exit 2 with ZERO
@@ -1160,7 +1160,7 @@ def apt_parser_can_use_keyring(path=None, channel=None):
     # THAN TIDY. gpgv resolves a `--keyring` argument containing no slash
     # against GNUPGHOME, not the working directory, and bound 2 forces
     # GNUPGHOME to an EMPTY throwaway directory, so a bare filename can never
-    # resolve. Measured by <agent> 2026-08-22, gpgv 2.4.7, one key,
+    # resolve. Measured 2026-08-22, gpgv 2.4.7, one key,
     # one clearsigned document, only the argument form changing:
     #
     #     --keyring /abs/path/keyring.gpg      rc=0  Good signature
@@ -1225,7 +1225,7 @@ def dev_auth_file_present():
 
     RENAMED FROM `dev_credentials_stored`, because the old name asserted
     something this predicate cannot observe and the window printed that claim
-    to the user. Found by <agent>, 2026-08-21, and the divergence is
+    to the user. Found in review, 2026-08-21, and the divergence is
     real on 4 of 7 fixture states:
 
         fixture                        helper            this predicate
@@ -1747,7 +1747,7 @@ def short_date(stamp):
 # silent rather than loud, because the cell renders in the new language, the
 # `== UPLOAD_UNKNOWN` test never fires again, and every package shows the
 # offline sentinel forever with no retry and no error. Flagged by
-# <agent> 2026-08-22 as the same class as the dashboard's translated
+# a reviewer 2026-08-22 as the same class as the dashboard's translated
 # `confirmText: 'DELETE'`, pointing the opposite way: there a translation
 # breaks a gate, here it breaks a retry.
 UPLOAD_UNKNOWN = "unknown (offline)"
@@ -1828,7 +1828,7 @@ def upload_sort_stamp(stamp):
     # 23:00 on the same day. Not reachable from the only writer, because
     # `fetch_upload_date` formats with `%H:%M` and %H is zero-padded, but a
     # hand-edited uploads.json reaches it and the failure is silent.
-    # <agent> 2026-08-22, who checked the writer before reporting it.
+    # Found by a reviewer 2026-08-22, who checked the writer before reporting it.
     clock = parts[1].split(":") if len(parts) > 1 else []
     hour = "".join(c for c in (clock[0] if clock else "") if c.isdigit())
     minute = "".join(c for c in (clock[1] if len(clock) > 1 else "")
@@ -1934,7 +1934,7 @@ class RepoManager:
         # PER-RUN TOKEN. Every queued idle callback that writes run state
         # carries the token of the run that queued it, so a callback that
         # arrives late cannot label a finished run, or the NEXT one, with the
-        # previous run's status. <agent>, finding c804ba72.
+        # previous run's status. Review finding c804ba72.
         self._run_token = 0
         # verb -> Gtk.MenuItem, so _apply_action_lock can grey the maintenance
         # entries while a helper runs like every other privileged control.
@@ -2929,7 +2929,7 @@ class RepoManager:
         #
         # `toggled:A` precedes `clicked:A`, so the outgoing chip is ALREADY
         # inactive when its call arrives and this drops exactly that one.
-        # Measured by <agent> 2026-08-22 on GTK 3.24.49 in both
+        # Measured 2026-08-22 on GTK 3.24.49 in both
         # directions: without the guard 2 runs per press, with it 1, and all
         # four end states and all four labels byte-identical. Wiring on
         # `toggled` instead would not have helped: the order is toggled:A,
@@ -3233,7 +3233,7 @@ class RepoManager:
         # the four branches that fill it put an English sentence there, and a
         # caption promising a command over a paragraph in a monospace face is
         # the same kind of small lie the rest of this pane was just cleaned of.
-        # Found by <agent> 2026-08-22 as the sibling of A3; the
+        # Found in review 2026-08-22 as the sibling of A3; the
         # DEV_REFUSAL branch already did it before my F3 split and I added two
         # more members to its class.
         self.ds_cmd_caption = ui.cls(ui.lbl("WHAT THE BUTTON RUNS", "note"),
@@ -3839,7 +3839,7 @@ class RepoManager:
     # ANY OF THEM, WHICH IS SELF-FULFILLING: that phrase is not in pkexec's
     # output at all, it is the sentence THIS WINDOW PRINTS when it makes the
     # diagnosis. So one real no-agent failure wrote the trigger into the
-    # console, and any later 127 matched it. <agent>, 2026-08-30.
+    # console, and any later 127 matched it. Found in review, 2026-08-30.
     NO_AGENT_SIGNATURES = (
         "creating textual authentication agent",
         "/dev/tty",
@@ -3854,7 +3854,7 @@ class RepoManager:
         sits in the last few thousand characters for as long as the window is
         open, and the next short 127 from any cause inherits the diagnosis.
         `_log_cursor` is stamped by run_helper when it echoes the command, so
-        this reads only what this run produced. <agent>, 2026-08-30.
+        this reads only what this run produced. Found in review, 2026-08-30.
 
         The comment this replaces claimed the tail prevented exactly the
         contamination it caused.
@@ -3985,7 +3985,7 @@ class RepoManager:
         a buffer that no longer exists: `console_text()[cursor:]` then returns
         the empty string, and a GENUINE no-agent failure arriving afterwards
         would be classified neutral because its signature had nowhere to land.
-        <agent>, 2026-08-30.
+        Found in review, 2026-08-30.
 
         Zero is not a fallback, it is the correct value: after a Clear
         everything the buffer subsequently holds was produced by the run that
@@ -4548,7 +4548,7 @@ class RepoManager:
         # self.iso_rows to be non-empty before the window applied, so an OFFLINE machine,
         # which is the one case where rows stay empty, started a fresh 8-second curl on
         # every switch to this page: exactly the spamming the window was meant to stop,
-        # aimed at the user least able to afford it. Raised by <agent>, 2026-09-19.
+        # aimed at the user least able to afford it. Raised in review, 2026-09-19.
         last = getattr(self, "_iso_fetched_at", 0.0)
         if last and (time.monotonic() - last) < self.ISO_REFRESH_MIN_SECONDS:
             return
@@ -5347,7 +5347,7 @@ class RepoManager:
                 # HAD ALREADY REJECTED one branch below ("credentials stored"),
                 # so the second attempt re-created the defect under a new noun
                 # and my test blessed it by banning only the old spelling.
-                # <agent> rejected both, 2026-08-30.
+                # A reviewer rejected both, 2026-08-30.
                 #
                 # What `dev_auth_file_present()` observes is a NON-EMPTY FILE.
                 # A stanza carrying a `machine` line and no password satisfies
@@ -5545,7 +5545,7 @@ class RepoManager:
             # zero writers into a catalog record. So every key was "", and
             # `sorted` on an all-equal key returns the input unchanged: the
             # chip was an IDENTITY PERMUTATION on a real machine, not only on a
-            # fixture, for its whole life. Found by <agent>
+            # fixture, for its whole life. Found in review
             # 2026-08-21, who also caught that the arm written to prove this
             # chip re-derived the same missing key and so could never fail.
             #
@@ -5564,7 +5564,7 @@ class RepoManager:
                 # `candidate(package, "dev")` is None for every package, every
                 # sort key collapsed to the single string "dev|" and the chip
                 # fell back to name order while the operator watched every date
-                # arrive in the pane. <agent> 2026-08-22, correcting my
+                # arrive in the pane. Found in review 2026-08-22, correcting my
                 # own claim that the two keys could never disagree.
                 artifact = repo.candidate(package, self.channel)
                 channel = self.channel
@@ -6090,7 +6090,7 @@ class RepoManager:
             # that failed a check and then passed one kept the old apt error
             # and its remedy under a chip reading "nothing to upgrade": a
             # hover that contradicts the label, describing a fault that has
-            # already been repaired. Found by <agent>, 2026-08-30.
+            # already been repaired. Found in review, 2026-08-30.
             # Every arm below either overwrites this or means it.
             self.updates_note.set_tooltip_text(None)
             if error:
@@ -6511,7 +6511,7 @@ class RepoManager:
                       # two lines below that this same block already prints
                       # `read from <index path>`, so the substitution answered
                       # a question the block answers again anyway. Found by
-                      # <agent> 2026-08-22, B3.
+                      # a reviewer 2026-08-22, B3.
                       % (package["maintainer"] or "no maintainer in the index",
                          package["homepage"] or "no homepage in the index",
                          self.catalog["dates"].get(self.channel) or synced_sentence,
@@ -6561,7 +6561,7 @@ class RepoManager:
             # protected repo can only have been fetched with working
             # credentials. So the success path ended "enter credentials, apt
             # update, open the package, and be told to go enter the
-            # credentials you just entered". Found by <agent>
+            # credentials you just entered". Found in review
             # 2026-08-22, A3, off my own pointer at the other three tabs.
             # The same window already answers this with the real predicate in
             # the sidebar and in the ds_cmd gate; this was the third site and
@@ -6586,7 +6586,7 @@ class RepoManager:
                           % (dev["version"], repo.CHANNELS["dev"]["url"],
                              stance))
 
-        # THE DUPLICATE IS SHOWN, NOT DISCARDED. P1, <agent>
+        # THE DUPLICATE IS SHOWN, NOT DISCARDED. P1, found in review
         # 2026-08-21: a package published in two components of one channel
         # used to be collapsed to whichever component sorted LAST, so main
         # carrying 9.9 and thirdparty carrying 1.0 showed 1.0 and the main
@@ -6619,7 +6619,7 @@ class RepoManager:
         # twenty keys and `uploaded` is not one of them, so that disjunct was
         # always falsy: it read as a second source for this date and was
         # nothing of the kind. Same missing key that made the `Newest` chip an
-        # identity permutation (<agent> 2026-08-21); found here by an
+        # identity permutation (2026-08-21); found here by an
         # AST sweep for the CLASS, comparing every record-shaped key the window
         # reads against every key the parser and the window write. Two hits in
         # the file, both this key, both now gone.
@@ -6775,7 +6775,7 @@ class RepoManager:
                     # as "the update is broken". apt does not verify with gpg.
                     # It verifies with GPGV, and gpgv's keyring reader is more
                     # permissive than gpg's: measured 2026-08-22 by
-                    # <agent> and reproduced independently by me on
+                    # a reviewer and reproduced independently by me on
                     # this host with gpg/gpgv 2.4.7, two throwaway ed25519
                     # keys and both controls, a single 7-byte 0xCA marker
                     # packet spliced between two keys makes
@@ -6795,7 +6795,7 @@ class RepoManager:
                     # SIGNATURE first and dies before it ever loads the
                     # keyring. Given a REAL inline-signed document the same
                     # probe separates cleanly, both directions, both controls
-                    # behaving (<agent>, six fixtures, 2026-08-22).
+                    # behaving (six fixtures, 2026-08-22).
                     # `apt_parser_can_use_keyring` above now asks it against
                     # the `_InRelease` apt already refreshed into
                     # /var/lib/apt/lists, so there is no shipped fixture and
@@ -6840,7 +6840,7 @@ class RepoManager:
                 # change in a function whose entire design is "more states,
                 # said precisely", and a KeyError raises inside
                 # `_render_detail`, so the WHOLE datasheet disappears rather
-                # than one sentence. Found by <agent> 2026-08-22, B1.
+                # than one sentence. Found in review 2026-08-22, B1.
                 # The fallback is deliberately an admission and not a guess:
                 # a pane that invents wording for a state nobody wrote is the
                 # recital defect this whole block was rewritten to remove.
@@ -6915,7 +6915,7 @@ class RepoManager:
                 # they cannot tell from a rendering fault. The opposite case
                 # is spelled out directly above, so this was an asymmetry in
                 # the block's own convention rather than a missing feature.
-                # Found by <agent> 2026-08-22, B2.
+                # Found in review 2026-08-22, B2.
                 self._ds_body(integrity,
                               "%s publishes no build of this package, so "
                               "there is no second artifact to compare "
@@ -6962,7 +6962,7 @@ class RepoManager:
             # channel publishes no build of the package, so printing "what the
             # button runs: install it from stable" underneath was the pane
             # contradicting itself in adjacent rows. Found by
-            # <agent> 2026-08-21: a principle written beside one
+            # a reviewer 2026-08-21: a principle written beside one
             # branch is about the CLASS, and this one had reached one of two
             # members. The greyed button was the honest half.
             # AND IT SPLITS THE SAME TWO WAYS THE REASON ROW SPLITS, because
@@ -7071,7 +7071,7 @@ class RepoManager:
             # `Depends:` lines in the stable apps index carry an alternative,
             # plus 1 of 4 `Recommends:` in main, so this is live on codium,
             # gitkraken, librewolf and kodachi-hooks-core rather than
-            # theoretical. Found by <agent> 2026-08-22, B4.
+            # theoretical. Found in review 2026-08-22, B4.
             # The marker is a COUNT rather than the joined names because the
             # joined form reaches 67 characters here, and chip width is the
             # whole reason the constraint went to the tooltip to begin with.
@@ -7106,7 +7106,7 @@ class RepoManager:
         # the same refusal into the log. Every other member of this class was
         # already handled (`channel_setup` at the strip, the other-channel card
         # button), so this was the one member the principle had not reached.
-        # Found by <agent> 2026-08-22 as the second half of their §3.
+        # Found by a reviewer 2026-08-22 as the second half of their §3.
         dev_locked = self.channel == "dev" and not dev_auth_file_present()
         reasons = []
         # NO DEFAULT. `configured_channels()` returns keys ONLY for channels
@@ -7317,7 +7317,7 @@ class RepoManager:
             # Refresh runs `apt update`, not this, and the cache has no TTL,
             # no expiry and no eviction. The only cure was deleting a JSON
             # file the operator has no reason to know exists. Found by
-            # <agent> 2026-08-22 by reading the chain rather than
+            # a reviewer 2026-08-22 by reading the chain rather than
             # hitting it. The class is the one worth remembering: a SENTINEL
             # WRITTEN ON THE ERROR PATH IS INDISTINGUISHABLE FROM DATA ON
             # EVERY SUBSEQUENT READ.
@@ -7669,7 +7669,7 @@ class RepoManager:
             repo.sources_dir(), "kodachi-%s.sources" % channel)
         # WHAT IS ALREADY ON THE MACHINE IS ASKED BEFORE WHAT IS MISSING FROM
         # IT, and the order is the whole correctness of the dev message.
-        # Raised by <agent>, 2026-08-30: with the credential hint first,
+        # Raised in review, 2026-08-30: with the credential hint first,
         # a machine carrying an EXTERNALLY configured dev source and no local
         # auth file was told "no credentials are stored", which is true and is
         # not the answer to the question he asked. The source is already there;
@@ -7700,7 +7700,7 @@ class RepoManager:
         # inspector, 2026-08-30, after I moved this check below the dormant one.
         #
         # Still AFTER the two "it is already there" branches, per
-        # <agent>: a machine that already has the source does not need
+        # the review finding: a machine that already has the source does not need
         # to be told about a password, it needs to be told which file has it.
         #
         # THE UNPRIVILEGED HINT IS A COURTESY, NOT THE GATE. The gate is
@@ -7839,7 +7839,7 @@ class RepoManager:
                 % (entry["path"], entry.get("mutation_reason") or
                    "the repository helper cannot mutate this path safely"))
             return
-        # FAIL CLOSED ON A KEY NOBODY SET. F3, <agent> 2026-08-21,
+        # FAIL CLOSED ON A KEY NOBODY SET. F3, 2026-08-21,
         # latent not live: all three producers in kodachi_repo.py set
         # "switchable" explicitly (:1160 False, :1186 True, :1258 from a
         # variable), so this default never fires today. The POLARITY is the
@@ -7852,7 +7852,7 @@ class RepoManager:
         # read with a truthy default. A fourth producer added later now fails
         # safe instead of silently gaining a button.
         if enable and not entry.get("switchable", False):
-            # C4, <agent> 2026-08-21, executed. `source-enable` acts on
+            # C4, 2026-08-21, executed. `source-enable` acts on
             # the FILE, and it deliberately never switches on a deb-src line the
             # distribution shipped commented. A .list carrying a commented deb
             # and a commented deb-src for one URI draws two disabled rows, so
@@ -7883,7 +7883,7 @@ class RepoManager:
                     and (e.get("switchable", False) or not enable)]
         deb822 = entry["format"] == "deb822"
         # BOTH LEGS ASK, AND THE ENABLE LEG ASKS HARDER. P2, raised by
-        # <agent> 2026-08-21: the confirmation was on `not enable`
+        # a reviewer 2026-08-21: the confirmation was on `not enable`
         # only, so DISABLING got a dialog naming the blast radius and ENABLING
         # got none, while the argv carries the FILE and not one stanza, so one
         # press switched every deliberately-disabled entry in that file back
@@ -8129,7 +8129,7 @@ class RepoManager:
             fields = preset_source_fields(preset) if locked else {}
             for key, entry in entries.items():
                 entry.set_text(fields.get(key, ""))
-                # READ-ONLY, NOT INSENSITIVE. Raised by <agent>,
+                # READ-ONLY, NOT INSENSITIVE. Raised in review,
                 # 2026-08-30: `set_sensitive(False)` greys the text, which is
                 # exactly the text the preset exists to let him READ, and it
                 # cannot be selected or copied, so a user who wants to check
@@ -8997,7 +8997,7 @@ class RepoManager:
             # talking steadily and simply taking too long. Saying "the helper
             # stopped printing" there is a false diagnosis of a real event,
             # which sends the reader looking for a hang that is not happening.
-            # <agent>, 2026-08-30.
+            # Found in review, 2026-08-30.
             cause = {"idle": "the helper stopped printing",
                      "noauth": "the password prompt was never answered",
                      "wall": "it ran past the time limit"}.get(
@@ -9027,7 +9027,7 @@ class RepoManager:
             # desktop has no authentication agent when the real fault is a
             # missing binary is a false diagnosis of a real failure. That is
             # the same defect as the 124 idle-vs-wall split below, and I did
-            # not carry the lesson across until <agent> said so.
+            # not carry the lesson across until a reviewer said so.
             self.append_log(
                 "could not ask for your password: no authentication agent is "
                 "running on this desktop, so pkexec had nothing to prompt "
@@ -9141,7 +9141,7 @@ class RepoManager:
             # goes to stderr, which for a dock-launched app nobody ever sees.
             # A silent permanent wedge is worse than a crash.
             #
-            # The reachable producer (<agent>, 2026-08-23) is the read
+            # The reachable producer (2026-08-23) is the read
             # loop: this pipes `pkexec kodachi-repo-apt`, which echoes apt's
             # Description and Maintainer fields out of THIRD-PARTY Packages
             # files. Debian policy says UTF-8; a third-party repo is not bound
@@ -9224,7 +9224,7 @@ class RepoManager:
                             # what _set_run_status exists to prevent. It is also
                             # the worst place to disagree, because the run has
                             # been handed back and the progress is frozen.
-                            # <agent>, 2026-08-30.
+                            # Found in review, 2026-08-30.
                             "still running as root; Stop cannot end it",
                             "warn")
                         extra = ""
@@ -9292,7 +9292,7 @@ class RepoManager:
             and spawning pkexec, so my first suite reconstructed the verdict
             table inside the test and sabotaged ITSELF: the reds proved the
             harness's ordering and a production omission would have passed.
-            Found by <agent>, 2026-08-30, reviewing this change.
+            Found by a reviewer, 2026-08-30, reviewing this change.
             """
             if not self.alive:
                 return False

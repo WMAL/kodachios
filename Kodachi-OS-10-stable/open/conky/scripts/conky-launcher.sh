@@ -939,7 +939,7 @@ launch_all_panels() {
     # One cached snapshot is shared by all panels via the file-based TTL cache.
     #
     # Timeout sizing (audit 2026-05-01, LAX-PROXY-02 cold-cache reproduction):
-    #   First boot on hysteria2/wireguard/Tor presents the slowest case, #   online-auth's HTTPS handshake + cert pinning takes 8-12 s alone, and
+    #   First boot on hysteria2/wireguard/Tor presents the slowest case, #   online-auth's HTTPS handshake and session check takes 8-12 s alone, and
     #   net-check's full ip+dns+http probe needs ~10 s on a slow tunnel. The
     #   old 8 s adapter cap timed out every network adapter on the very first
     #   refresh, then `build_snapshot` persisted the fallback "Off"/"Offline"

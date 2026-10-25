@@ -1068,7 +1068,7 @@ install_production_auth_trust() {
     # fresh ISO shipped results/signatures with 60 entries and auth-trust/signatures with
     # 58, and vm-hooks-trust-gate.sh V3 (bidirectional store parity for the stamp) failed
     # on host-exposure-defaults.json_v<stamp>.sig before any deploy had touched the box.
-    # Measured on the <lab-host> live ISO on a test VM by <agent> on
+    # Measured on the <lab-host> live ISO on a test VM on
     # 2026-09-05, reported for the ISO/signer owner and adopted here on 2026-09-06.
     # build-apt-channels.sh already copies the whole results store into auth-trust for
     # the apt trees, so this only brings the ISO path to the same layout. The policy is
@@ -3128,8 +3128,13 @@ setup_dashboard_autostart() {
     # GPU-driver detection (nouveau / legacy radeon + NVIDIA proprietary).
     # Refresh marker is GPU_NEEDS_FALLBACK, older launchers used the
     # narrower NVIDIA_PROPRIETARY token and get rewritten on next install.
+    # EVERY later launcher fix needs its own marker here (2026-10-13): the INST-1
+    # "(deleted)" readlink fix went into this heredoc on 2026-09-03 and the ISO's copy
+    # only on 2026-10-13, and a launcher that carried the three older markers was
+    # never rewritten, so this installer could not deliver INST-1 to any machine
+    # whose launcher came from an ISO or kodachi-assets of that period.
     local launcher_script="/usr/local/bin/kodachi-dashboard-launcher"
-    if [[ ! -f "$launcher_script" ]] || ! grep -q 'GPU_NEEDS_FALLBACK' "$launcher_script" 2>/dev/null || ! grep -q 'DASHBOARD_BIN=' "$launcher_script" 2>/dev/null || ! grep -q 'ALLOW_MULTI' "$launcher_script" 2>/dev/null; then
+    if [[ ! -f "$launcher_script" ]] || ! grep -q 'GPU_NEEDS_FALLBACK' "$launcher_script" 2>/dev/null || ! grep -q 'DASHBOARD_BIN=' "$launcher_script" 2>/dev/null || ! grep -q 'ALLOW_MULTI' "$launcher_script" 2>/dev/null || ! grep -qF '_exe=${_exe% (deleted)}' "$launcher_script" 2>/dev/null; then
         print_info "Installing/refreshing dashboard launcher script..."
         local _launcher_tmp
         _launcher_tmp="$(mktemp "${TMPDIR:-/tmp}/kodachi-launcher.XXXXXX")"
@@ -3175,7 +3180,7 @@ setup_dashboard_autostart() {
 #                                        WebKitGTK on some kernel combos)
 # And on the launch line: --no-gpu (Tauri / WebKit hint)
 #
-# Version: <lab-host>
+# Version: the Kodachi release this file ships in (no per-file number)
 # Author:  Warith Al Maawali
 # Website: https://kodachi.cloud
 # GitHub:  https://github.com/AiGptCode/Kodachi-OS
@@ -3317,7 +3322,7 @@ if [ "${KODACHI_DASHBOARD_ALLOW_MULTI:-0}" != "1" ]; then
             # --class matches the SECOND WM_CLASS value, which is the
             # capitalised "Kodachi-dashboard", and xdotool matches it
             # case-sensitively, so `--class 'kodachi-dashboard'` returns NOTHING.
-            # Measured read-only on .192 by <agent> against the live
+            # Measured read-only on .192 against the live
             # dashboard: xprop reports WM_CLASS = "kodachi-dashboard",
             # "Kodachi-dashboard"; --class with the lowercase value returned 0
             # ids while --classname returned the real window. Getting this wrong

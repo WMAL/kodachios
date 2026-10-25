@@ -143,8 +143,8 @@
     {
       "id": 5,
       "type": "command",
-      "cmd": "sudo systemctl restart NetworkManager",
-      "description": "Run sudo systemctl restart <service> through the typed Linux executor",
+      "cmd": "sudo health-control network-manager-restart",
+      "description": "Restart NetworkManager and verify it is active; refuses (exit 1) when Kodachi's Disable network management has masked it, and never unmasks",
       "condition": {
         "type": "if_success"
       },
@@ -157,20 +157,19 @@
         "danger_level": "high",
         "requires_auth": true,
         "needs_sudo": true,
-        "execution_kind": "tauri-command",
+        "execution_kind": "tauri-service",
         "destructive": false,
         "workflow_safe": true,
         "shell_safe": true,
-        "confirm_copy": "Confirm this workflow step before execution: Run sudo systemctl restart <service> through the typed Linux executor",
-        "rollback_hint": "Re-run the corresponding status command and restore the previous configuration if needed."
+        "confirm_copy": "Confirm this workflow step before execution: Restart NetworkManager and verify it is active; refuses (exit 1) when Kodachi's Disable network management has masked it, and never unmasks",
+        "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
       },
-      "command_id": "linux.systemctl_restart",
+      "command_id": "rust.health-control.network-manager-restart",
       "argv": [
         "/usr/bin/sudo",
         "-n",
-        "/usr/bin/systemctl",
-        "restart",
-        "NetworkManager"
+        "/opt/kodachi/dashboard/hooks/health-control",
+        "network-manager-restart"
       ]
     },
     {

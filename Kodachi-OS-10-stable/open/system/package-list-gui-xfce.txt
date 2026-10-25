@@ -81,7 +81,7 @@ thunar-archive-plugin
 thunar-volman
 thunar-media-tags-plugin
 # --- Thunar / xfdesktop right-click menu dependency, declared explicitly ---
-# Added 2026-08-26 by <agent>. This edition is the ONLY one that ships
+# Added 2026-08-26. This edition is the ONLY one that ships
 # the Kodachi context menu: /etc/skel/.config/Thunar/uca.xml and the 16
 # /usr/local/bin/thunar-*.sh helpers live in overlays/gui-xfce, and `minimal`
 # inherits `terminal`, so it gets Thunar and none of the menu.

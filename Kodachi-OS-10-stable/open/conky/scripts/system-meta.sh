@@ -70,7 +70,7 @@ sanitize_value() {
     while [[ "$value" == *"  "* ]]; do value="${value//  / }"; done
     value="${value# }"
     value="${value% }"
-    # `printf`, NEVER `echo`. MEASURED by <agent> against the pre-rewrite version: a value
+    # `printf`, NEVER `echo`. MEASURED against the pre-rewrite version: a value
     # of `-n`, `-e`, `-E` or `-ne` is swallowed by bash's builtin echo as an OPTION, so those four
     # inputs printed "N/A" before this function was rewritten and printed an EMPTY LINE afterwards.
     # An empty line in a conky ${exec} is a blank field on the operator's desktop, which is exactly
@@ -137,6 +137,7 @@ SM_PREFETCH_KEYS=(
     "system-meta.binary-on"
     "system-meta.binary-nb"
     "data.versions.binary.nb"
+    "data.versions.binary.online.build_number"
     "system-meta.terminal-cur"
     "data.versions.terminal.cur"
     "data.versions.terminal.on"
@@ -144,6 +145,7 @@ SM_PREFETCH_KEYS=(
     "system-meta.terminal-on"
     "system-meta.terminal-nb"
     "data.versions.terminal.nb"
+    "data.versions.terminal.online.build_number"
     "system-meta.desktop-cur"
     "data.versions.desktop.cur"
     "data.versions.desktop.on"
@@ -151,6 +153,7 @@ SM_PREFETCH_KEYS=(
     "system-meta.desktop-on"
     "system-meta.desktop-nb"
     "data.versions.desktop.nb"
+    "data.versions.desktop.online.build_number"
 )
 
 get_key() {
@@ -383,6 +386,9 @@ case "$FIELD" in
             *)      printf '%s\n' '${color3}?' ;;
         esac
         ;;
+    # "CURRENT" IS LOCAL ONLY (round 3p, step-0 on 164531b90): the last fallbacks of each *_cur block were the ONLINE
+    # version (with the local build number), so with every local source missing version-check.sh compared the online
+    # record with itself and called the machine current. No local source now prints N/A, which reads as unknown.
     binary_cur)
         first_non_na \
             "$(get_build_meta_value "binary_pack" "nightly_version")" \
@@ -391,15 +397,17 @@ case "$FIELD" in
             "$(get_build_meta_value "binary_pack" "version")" \
             "$(get_key "system-meta.binary-cur" "N/A")" \
             "$(get_key "data.versions.binary.cur" "N/A")" \
-            "$(get_key "data.health.binary_version" "N/A")" \
-            "$(compose_version_from_keys "data.versions.binary.on" "data.versions.binary.nb")" \
-            "$(get_key "data.versions.binary.on" "N/A")"
+            "$(get_key "data.health.binary_version" "N/A")"
         ;;
+    # THE "LATEST" COLUMN PAIRS THE ONLINE VERSION WITH THE ONLINE BUILD NUMBER (round 3p, 2026-10-24). These
+    # fallbacks paired it with the LOCAL build-meta number (data.versions.<x>.nb), so whenever the online nightly
+    # was not in the snapshot the panel advertised a build that does not exist (desktop 72 live VM under load:
+    # "latest" terminal <lab-host> from the pack's lockstep editions, while the server served <lab-host>) or called
+    # an out-of-date machine current. No online number now means the version alone, never a local number.
     binary_on)
         first_non_na \
             "$(compose_version_with_build "$(get_key "data.online_info.releases.binary_pack.nightly_version" "N/A")" "")" \
-            "$(compose_version_from_keys "system-meta.binary-on" "system-meta.binary-nb")" \
-            "$(compose_version_from_keys "data.versions.binary.on" "data.versions.binary.nb")" \
+            "$(compose_version_from_keys "data.versions.binary.on" "data.versions.binary.online.build_number")" \
             "$(get_key "system-meta.binary-on" "N/A")" \
             "$(get_key "data.versions.binary.on" "N/A")"
         ;;
@@ -419,15 +427,12 @@ case "$FIELD" in
             "$(get_build_meta_value "terminal" "version")" \
             "$(get_key "system-meta.terminal-cur" "N/A")" \
             "$(get_key "data.versions.terminal.cur" "N/A")" \
-            "$(get_key "data.health.binary_version" "N/A")" \
-            "$(compose_version_from_keys "data.versions.terminal.on" "data.versions.terminal.nb")" \
-            "$(get_key "data.versions.terminal.on" "N/A")"
+            "$(get_key "data.health.binary_version" "N/A")"
         ;;
     terminal_on)
         first_non_na \
             "$(compose_version_with_build "$(get_key "data.online_info.releases.terminal.nightly_version" "N/A")" "")" \
-            "$(compose_version_from_keys "system-meta.terminal-on" "system-meta.terminal-nb")" \
-            "$(compose_version_from_keys "data.versions.terminal.on" "data.versions.terminal.nb")" \
+            "$(compose_version_from_keys "data.versions.terminal.on" "data.versions.terminal.online.build_number")" \
             "$(get_key "system-meta.terminal-on" "N/A")" \
             "$(get_key "data.versions.terminal.on" "N/A")"
         ;;
@@ -448,15 +453,12 @@ case "$FIELD" in
             "$(get_build_meta_value "desktop" "version")" \
             "$(get_key "system-meta.desktop-cur" "N/A")" \
             "$(get_key "data.versions.desktop.cur" "N/A")" \
-            "$(get_key "data.health.binary_version" "N/A")" \
-            "$(compose_version_from_keys "data.versions.desktop.on" "data.versions.desktop.nb")" \
-            "$(get_key "data.versions.desktop.on" "N/A")"
+            "$(get_key "data.health.binary_version" "N/A")"
         ;;
     desktop_on)
         first_non_na \
             "$(compose_version_with_build "$(get_key "data.online_info.releases.desktop.nightly_version" "N/A")" "")" \
-            "$(compose_version_from_keys "system-meta.desktop-on" "system-meta.desktop-nb")" \
-            "$(compose_version_from_keys "data.versions.desktop.on" "data.versions.desktop.nb")" \
+            "$(compose_version_from_keys "data.versions.desktop.on" "data.versions.desktop.online.build_number")" \
             "$(get_key "system-meta.desktop-on" "N/A")" \
             "$(get_key "data.versions.desktop.on" "N/A")"
         ;;

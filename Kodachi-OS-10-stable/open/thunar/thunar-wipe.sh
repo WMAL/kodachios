@@ -173,7 +173,7 @@ fi
 # is enough and the protected-path guard does not apply.
 # ---------------------------------------------------------------------------
 # TWO THINGS THE OLD `sudo -n true` PROBE GOT WRONG (2026-08-26, from
-# <agent>'s fleet-wide sweep of this exact call shape).
+# A reviewer's fleet-wide sweep of this exact call shape).
 #
 # 1. IT ASKED ABOUT THE WRONG COMMAND. `sudo -n true` answers a question about
 #    `true`. The product ships four sudoers.d files, 139 NOPASSWD rules, and

@@ -80,7 +80,7 @@ fi
 # string "0\n0", so both integer guards below died with "integer expression
 # expected" and FAILED OPEN: the "No GPG Keys" dialog the user needs was never
 # shown and the multi-key chooser never appeared. Measured on the <lab-host> live ISO
-# by <agent> and reproduced under bash 5.2.37.
+# and reproduced under bash 5.2.37.
 #
 # IT MUST BE `|| true`, NOT NOTHING. `set -e` is in force at the top of this file,
 # so a bare `grep -c` makes the assignment itself fail on a no-match and the script

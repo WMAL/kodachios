@@ -72,7 +72,7 @@ PROXY_BASENAMES = {
 }
 DIRECT_KINDS = {"linux", "rust", "workflow-profile"}
 EXPECTED_ACTIONABLE_DENOMINATORS = {
-    "commandWindowRows": 410,
+    "commandWindowRows": 411,
     "torExitDraftControls": 87,
     "torExcludePresetDraftControls": 4,
     "torExcludeCountryDraftControls": 76,

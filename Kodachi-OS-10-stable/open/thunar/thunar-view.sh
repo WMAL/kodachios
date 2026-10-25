@@ -47,7 +47,7 @@
 #
 # thunar-uca discards the child's stderr, so the user clicked the entry and got
 # absolute silence: `pgrep -a zenity` and an xdotool title search both returned
-# nothing after all five. Proven on hardware by <agent> on the <lab-host>
+# nothing after all five. Proven on hardware on the <lab-host>
 # live ISO (a test VM) and confirmed independently on the dev host.
 #
 # This is the same failure class 8e1358e87 fixed for "Print file/s" and

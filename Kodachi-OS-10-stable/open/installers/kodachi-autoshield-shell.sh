@@ -85,8 +85,8 @@ done
 # Source: main-info.json (terminal section)
 # DO NOT EDIT MANUALLY - Run pack-kodachi.sh to update these values
 BUILD_VERSION="<lab-host>"  # From: terminal.main_version
-BUILD_NUM="36"          # From: terminal.build_number (auto-incremented)
-BUILD_DATE="2026-10-08"  # From: terminal.last_build_date
+BUILD_NUM="50"          # From: terminal.build_number (auto-incremented)
+BUILD_DATE="2026-10-25"  # From: terminal.last_build_date
 SCRIPT_VERSION="${BUILD_VERSION}.${BUILD_NUM}"
 
 # Color codes for compact display (optimized for black terminal)

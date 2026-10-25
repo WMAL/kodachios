@@ -52,6 +52,12 @@ case "$FIELD" in
         ;;
     list)
         snapshot_list="$(read_ai_snapshot_field '.data.system.runtime.ai.conky' || true)"
+        # Right after boot the snapshot holds the "detection did not finish" placeholder, not a
+        # list: show a short neutral value beside the "AI Agents" label (conky-gateway-common.sh).
+        if conky_runtime_block_is_pending "${snapshot_list:-}"; then
+            printf '%s\n' '${color3}checking...'
+            exit 0
+        fi
         if [[ -n "${snapshot_list:-}" ]]; then
             printf '%s\n' "$snapshot_list"
             exit 0
@@ -62,7 +68,9 @@ case "$FIELD" in
         # explanation. Say so instead, and distinguish "not installed" from
         # "installed but idle" so the panel is actionable either way.
         ai_list="$(conky_gateway_get_multiline_or_default "ai-agents.list" "" 5 "$BIN")"
-        if [[ -n "${ai_list//[[:space:]]/}" ]]; then
+        if conky_runtime_block_is_pending "$ai_list"; then
+            printf '%s\n' '${color3}checking...'
+        elif [[ -n "${ai_list//[[:space:]]/}" ]]; then
             printf '%s\n' "$ai_list"
         elif ls /opt/kodachi/dashboard/hooks/ai-* >/dev/null 2>&1; then
             echo "no agents running"

@@ -176,7 +176,7 @@ def runtime_available(runtime, app_id):
     # for a row that would still refuse afterwards.
     #
     # WITHOUT THIS CLAUSE THE ADAPTER SUCCEEDS AND THE FAILURE MOVES INTO A
-    # WINDOW THAT CLOSES WITH IT. Traced by <agent> on 2026-08-26 and
+    # WINDOW THAT CLOSES WITH IT. Traced on 2026-08-26 and
     # then observed: runtime_available() returned (True, ""), both
     # validate_program() calls passed because the manager and the terminal ARE
     # shipped, and os.execv opened an xfce4-terminal titled "Kodachi Disposable

@@ -1418,7 +1418,7 @@ configure_kodachi_sudoers() {
         # it CORRECT rather than what breaks it. Verified in a real chroot: rc=0 inside,
         # rc=1 on the host.
         # MEASURED 2026-09-07 on the <lab-host> build 11 medium, reported by
-        # <agent>: it shipped kodachi-binaries.backup.1788758859 anyway,
+        # a reviewer: it shipped kodachi-binaries.backup.1788758859 anyway,
         # and a fresh one regenerated on every build.
         #
         # All four signals above are set by the CALLER, and a release ISO no longer
@@ -2013,7 +2013,7 @@ ensure_ai_model_path_compatibility() {
         # `|| true` ate it, and the `[[ -e ]]` confirmation was still false. The
         # function did nothing, said nothing, and `fixed_count` stayed 0, so the
         # summary reported "already compatible" for the one location that was
-        # broken. Measured with a control in the same run by <agent>,
+        # broken. Measured with a control in the same run,
         # 2026-08-20: clean run prints "Model path linked" and fixed_count=1;
         # dangling link prints NOTHING and fixed_count=0.
         #
@@ -2767,22 +2767,61 @@ setup_dashboard_autostart() {
     # Refresh marker is GPU_NEEDS_FALLBACK, older launchers used the
     # narrower NVIDIA_PROPRIETARY token and get rewritten on next install.
     local launcher_script="/usr/local/bin/kodachi-dashboard-launcher"
-    if [[ ! -f "$launcher_script" ]] || ! grep -q 'GPU_NEEDS_FALLBACK' "$launcher_script" 2>/dev/null || ! grep -q 'DASHBOARD_BIN=' "$launcher_script" 2>/dev/null; then
+    if [[ ! -f "$launcher_script" ]] || ! grep -q 'GPU_NEEDS_FALLBACK' "$launcher_script" 2>/dev/null || ! grep -q 'DASHBOARD_BIN=' "$launcher_script" 2>/dev/null || ! grep -q 'ALLOW_MULTI' "$launcher_script" 2>/dev/null || ! grep -qF '_exe=${_exe% (deleted)}' "$launcher_script" 2>/dev/null; then
         print_info "Installing/refreshing dashboard launcher script..."
         cat > "$launcher_script" << 'LAUNCHER_EOF'
 #!/bin/bash
-# Kodachi Dashboard Launcher with VM + GPU-driver detection
+
+# kodachi-dashboard-launcher
+# ===========================================================
+#
+# SPDX-License-Identifier: LicenseRef-Kodachi-SAN-1.1
+# Copyright (c) 2013-2026 Warith Al Maawali
+#
+# This file is part of Kodachi OS.
+# For full license terms, see LICENSE.md or visit:
+# http://kodachi.cloud/wiki/bina/license.html
+#
+# Commercial or organizational use requires a written license.
+# Contact: warith@digi77.com
+
+# ==========================================
+# KODACHI OS - DASHBOARD LAUNCHER
+# ==========================================
+#
+# Launches the Kodachi Dashboard with VM and GPU-driver detection.
 # Auto-detects VM environments and GPU drivers that need the WebKitGTK
 # software-render fallback so the dashboard does not come up as a blank
-# window. Covers: NVIDIA proprietary, Nouveau (Mesa, GTX Kepler/Maxwell
-# era), and legacy radeon (pre-amdgpu).
+# window.
+#
+# Detected paths that need the fallback:
+#   - NVIDIA proprietary driver (kernel module: nvidia)
+#   - Nouveau (open-source NVIDIA driver; Mesa-based; Kepler/Maxwell EGL
+#     and GBM are flaky enough to silently break WebKitGTK DMABUF init)
+#   - Legacy AMD via the radeon kernel module (pre-amdgpu, GCN1 and older)
+#
+# Applied env vars:
+#   - WEBKIT_DISABLE_DMABUF_RENDERER=1  (disables DMA-BUF render path)
+#   - WEBKIT_DISABLE_COMPOSITING_MODE=1 (forces simpler render path)
+#   - LIBGL_ALWAYS_SOFTWARE=1           (Mesa-only; forces llvmpipe;
+#                                        ineffective on NVIDIA proprietary
+#                                        GL stack so scoped to Mesa drivers)
+#   - __NV_DISABLE_EXPLICIT_SYNC=1      (NVIDIA-proprietary-only; disables
+#                                        explicit-sync path that crashes
+#                                        WebKitGTK on some kernel combos)
+# And on the launch line: --no-gpu (Tauri / WebKit hint)
+#
+# Version: the Kodachi release this file ships in (no per-file number)
+# Author:  Warith Al Maawali
+# Website: https://kodachi.cloud
+# GitHub:  https://github.com/AiGptCode/Kodachi-OS
 
 VM_DETECTED=false
 GPU_NEEDS_FALLBACK=false
 GPU_IS_MESA_DRIVER=false
 GPU_IS_NVIDIA_PROPRIETARY=false
 
-# VM detection
+# VM detection via DMI strings.
 if [ -f /sys/class/dmi/id/sys_vendor ]; then
     vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null | tr '[:upper:]' '[:lower:]')
     case "$vendor" in
@@ -2801,44 +2840,54 @@ if [ -f /sys/class/dmi/id/product_name ]; then
     esac
 fi
 
-# 1. NVIDIA proprietary driver
+# GPU driver detection. Order matters only for the IS_* flags (Mesa vs
+# proprietary controls which env-var subset gets applied below).
+
+# 1. NVIDIA proprietary driver.
 if [ -f /proc/driver/nvidia/version ] || \
    lsmod 2>/dev/null | grep -qE '^nvidia[[:space:]]'; then
     GPU_NEEDS_FALLBACK=true
     GPU_IS_NVIDIA_PROPRIETARY=true
 fi
 
-# 2. Nouveau (open-source NVIDIA, Mesa), catches older NVIDIA chips
-#    (e.g. GTX 770 / Kepler) whose Nouveau GBM/EGL silently breaks
+# 2. Nouveau (open-source NVIDIA, Mesa-based). Catches GTX 770 / Kepler
+#    and other older NVIDIA chips whose Nouveau GBM/EGL silently fails the
 #    WebKitGTK DMABUF init, producing a black dashboard window.
 if lsmod 2>/dev/null | grep -qE '^nouveau[[:space:]]'; then
     GPU_NEEDS_FALLBACK=true
     GPU_IS_MESA_DRIVER=true
 fi
 
-# 3. Legacy AMD via radeon module (pre-amdgpu, GCN1 and earlier)
+# 3. Legacy AMD via radeon module (pre-amdgpu, GCN1 and earlier). Modern
+#    AMD loads amdgpu, so this only matches the truly old hardware.
 if lsmod 2>/dev/null | grep -qE '^radeon[[:space:]]' && \
    ! lsmod 2>/dev/null | grep -qE '^amdgpu[[:space:]]'; then
     GPU_NEEDS_FALLBACK=true
     GPU_IS_MESA_DRIVER=true
 fi
 
+# Apply env vars based on what was detected.
 if [ "$GPU_NEEDS_FALLBACK" = "true" ]; then
     export WEBKIT_DISABLE_DMABUF_RENDERER=1
     export WEBKIT_DISABLE_COMPOSITING_MODE=1
 fi
 
-# LIBGL_ALWAYS_SOFTWARE is Mesa-only, NVIDIA proprietary GL ignores it.
+# LIBGL_ALWAYS_SOFTWARE is Mesa-only. The NVIDIA proprietary GL stack
+# ignores it, so scope to Mesa drivers only.
 if [ "$GPU_IS_MESA_DRIVER" = "true" ]; then
     export LIBGL_ALWAYS_SOFTWARE=1
 fi
 
-# NVIDIA proprietary Wayland explicit-sync can crash WebKitGTK.
+# NVIDIA proprietary on Wayland can crash WebKitGTK via explicit-sync;
+# disabling it forces the older sync path that compositors handle.
 if [ "$GPU_IS_NVIDIA_PROPRIETARY" = "true" ]; then
     export __NV_DISABLE_EXPLICIT_SYNC=1
 fi
 
-# Resolve dashboard binary at runtime across the known install locations.
+# Resolve the dashboard binary at runtime. global-launcher normally
+# symlinks it to /usr/local/bin/kodachi-dashboard, but that symlink is
+# absent if global-launcher's deploy step never ran. Fall back across the
+# known install locations so the launcher never dies with "No such file".
 DASHBOARD_BIN=""
 for _cand in /usr/local/bin/kodachi-dashboard \
              /opt/kodachi/dashboard/hooks/kodachi-dashboard \
@@ -2853,12 +2902,88 @@ if [ -z "$DASHBOARD_BIN" ]; then
     exit 1
 fi
 
+# ==========================================
+# SINGLE-INSTANCE GUARD
+# ==========================================
+#
+# Alt+F4 HIDES the dashboard to the tray, it does not exit. Clicking the desktop
+# icon again used to start a SECOND full instance: measured on 2026-08-31 across
+# three VMs, one process and one window became two processes and two windows,
+# each with its own tray registration, its own permission-guard auto-start and
+# its own polling loop. On a four-core box that is a second copy of every hook
+# poll for no benefit, and the user has no way to tell which window is which.
+#
+# Raise the existing window instead. `pgrep -x` cannot be used here: the process
+# name is 17 characters and Linux truncates comm to 15, so an -x match silently
+# returns nothing. Match the argv path instead, anchored so that this launcher's
+# own command line ("kodachi-dashboard-launcher") cannot match itself.
+#
+# KODACHI_DASHBOARD_ALLOW_MULTI=1 deliberately bypasses the guard.
+if [ "${KODACHI_DASHBOARD_ALLOW_MULTI:-0}" != "1" ]; then
+    # Candidates come from a broad argv match, but argv is NOT trusted to decide:
+    # any process whose command line merely CONTAINS this path matches, including
+    # a shell running a script that mentions it. Proven while writing this guard:
+    # the probe shell that tested the pattern matched itself twice. A false
+    # positive here does not misreport anything, it PREVENTS THE DASHBOARD FROM
+    # STARTING AT ALL, so the candidate is confirmed by its actual executable via
+    # /proc/<pid>/exe, which a shell can never fake.
+    _existing=""
+    for _pid in $(pgrep -u "$(id -u)" -f 'kodachi-dashboard' 2>/dev/null); do
+        [ "$_pid" = "$$" ] && continue
+        _exe=$(readlink "/proc/$_pid/exe" 2>/dev/null) || continue
+        # INST-1: a deploy that overwrites the binary while the old dashboard is
+        # still running makes the kernel append ' (deleted)' to this readlink, so
+        # the bare basename stops matching and the guard misses exactly the
+        # instance it exists to find. That is the moment the operator clicks the
+        # icon again and gets a second full instance, two trays and two poll loops.
+        _exe=${_exe% (deleted)}
+        [ "${_exe##*/}" = "kodachi-dashboard" ] || continue
+        _existing="$_pid"
+        break
+    done
+    if [ -n "$_existing" ]; then
+        # Whether we ACTUALLY raised the window. The success message used to sit
+        # outside every guard below, so it printed "raised the existing window"
+        # even when there was no DISPLAY, no xdotool, no matching window, or a
+        # failed map/activate. That is a false-success path: it reports the very
+        # outcome it failed to achieve, and it reproduces the silent no-op this
+        # guard exists to prevent, only with a reassuring message on top.
+        _raised=0
+        if [ -n "${DISPLAY:-}" ] && command -v xdotool >/dev/null 2>&1; then
+            # --class matches the SECOND WM_CLASS value, which is the
+            # capitalised "Kodachi-dashboard", and xdotool matches it
+            # case-sensitively, so `--class 'kodachi-dashboard'` returns NOTHING.
+            # Measured read-only on .192 against the live
+            # dashboard: xprop reports WM_CLASS = "kodachi-dashboard",
+            # "Kodachi-dashboard"; --class with the lowercase value returned 0
+            # ids while --classname returned the real window. Getting this wrong
+            # is worse than the bug being fixed: the guard would suppress the
+            # second process, fail to raise the first, and exit 0, so clicking
+            # the icon would do NOTHING AT ALL. --classname matches the instance
+            # name, which is the stable lowercase value.
+            _win=$(xdotool search --classname 'kodachi-dashboard' 2>/dev/null | tail -1)
+            if [ -n "$_win" ]; then
+                if xdotool windowmap "$_win" >/dev/null 2>&1 &&
+                   xdotool windowactivate "$_win" >/dev/null 2>&1; then
+                    _raised=1
+                fi
+            fi
+        fi
+        if [ "$_raised" = "1" ]; then
+            echo "kodachi-dashboard-launcher: already running (pid $_existing); raised the existing window instead of starting a second instance." >&2
+        else
+            echo "kodachi-dashboard-launcher: already running (pid $_existing), and the existing window could NOT be raised (no DISPLAY, xdotool unavailable, or no matching window). Not starting a second instance; use the tray icon, or set KODACHI_DASHBOARD_ALLOW_MULTI=1 to force one." >&2
+        fi
+        exit 0
+    fi
+fi
+
+# Launch dashboard with appropriate flags.
 if [ "$VM_DETECTED" = "true" ] || [ "$GPU_NEEDS_FALLBACK" = "true" ]; then
     exec "$DASHBOARD_BIN" --no-gpu "$@"
 else
     exec "$DASHBOARD_BIN" "$@"
 fi
-
 LAUNCHER_EOF
         chmod 755 "$launcher_script"
         print_success "Created launcher script: $launcher_script"
@@ -6495,6 +6620,18 @@ setup_dnscrypt_service() {
     # upgrade should do. This text is pinned to its template by
     # livebuilds/kodachi-terminal-build/tests/test-dnscrypt-units-route-wait-and-quiet-monitor.sh.
     local monitor_unit_dir="${KODACHI_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+    # Round 3p (2026-10-24): every start of the timer runs the monitor once. kodachi-hooks-core ships the same file in
+    # /usr/lib/systemd/system/dnscrypt-monitor.timer.d/; this road may have no hooks-core. Without it an installed
+    # system whose disk passphrase holds the boot past 30 s never runs the monitor: Persistent=true drops the boot
+    # trigger that has passed, and OnUnitActiveSec has no first run to count from. Written on EVERY run, before the
+    # enabled/disabled branch below: for a disabled or absent timer it is inert, and a later
+    # `dns-switch enable-dnscrypt-monitor` (which writes the main unit without it) picks it up; beside the unit, so
+    # a rewrite of the unit keeps it.
+    mkdir -p "$monitor_unit_dir"/dnscrypt-monitor.timer.d
+    cat > "$monitor_unit_dir"/dnscrypt-monitor.timer.d/kodachi-fire-on-start.conf <<'MONTMRD'
+[Timer]
+OnActiveSec=5sec
+MONTMRD
     if [[ -n "${KODACHI_CONFIGURE_FROM:-}" ]] && ! systemctl is-enabled --quiet dnscrypt-monitor.timer 2>/dev/null; then
         print_info "DNSCrypt monitor is not enabled; this upgrade leaves it off (sudo dns-switch enable-dnscrypt-monitor turns it on)"
     else
@@ -6703,7 +6840,7 @@ generate_pihole_setupvars() {
     # halves shipped: the double-hash in setupVars.conf and the PLAINTEXT in
     # /etc/pihole/.webpassword_initial. Random is not unique when the randomness
     # happens once, upstream of everybody. Found on the <lab-host> medium by
-    # <agent>.
+    # a reviewer.
     #
     # In a chroot it ships UNSET. An empty WEBPASSWORD is Pi-hole's own "no
     # password configured" state, so the first real activation sets one normally.
@@ -6769,8 +6906,8 @@ configure_pihole_port() {
     local pihole_config="/etc/pihole/pihole.toml"
     local pihole_ftl_config="/etc/pihole/pihole-FTL.conf"
 
-    # Check if Pi-hole is installed
-    if ! command -v pihole &>/dev/null; then
+    # Check if Pi-hole is installed (the CLI is in /usr/local/bin, outside dpkg's PATH)
+    if ! pihole_find_executable pihole >/dev/null; then
         print_warning "Pi-hole is not installed, skipping port configuration"
         return 1
     fi
@@ -6927,7 +7064,7 @@ check_dns_services() {
     fi
 
     # Check if Pi-hole is running on port 5353
-    if command -v pihole &>/dev/null; then
+    if pihole_find_executable pihole >/dev/null; then
         if systemctl is-active --quiet pihole-FTL 2>/dev/null; then
             if ss -tlnp 2>/dev/null | grep -q ":5353.*pihole-FTL\|:5353.*dnsmasq"; then
                 pihole_port_5353=true
@@ -6968,26 +7105,81 @@ check_dns_services() {
     return 0
 }
 
+# Round 3k (2026-10-22, runbook row 13 on the live test VM): dpkg runs every maintainer script with
+# PATH=/usr/sbin:/usr/bin:/sbin:/bin (measured inside kodachi-pihole's postinst), and the pihole CLI
+# is /usr/local/bin/pihole, so a bare `command -v pihole` failed in EVERY package configure:
+# pihole_runtime_installed read "not installed", run_optional_pihole_setup counted its no-op install
+# as "installed now" and forced a user's running Pi-hole off at each upgrade. Every Pi-hole lookup
+# goes through this finder: PATH first, then the standard system directories (which
+# KODACHI_PIHOLE_SYSTEM_BIN_DIRS replaces, for the installer regression test). Prints the path.
+pihole_find_executable() {
+    local name="$1" found="" dir=""
+    found="$(command -v "$name" 2>/dev/null)" || found=""
+    if [[ "$found" == /* && -f "$found" && -x "$found" ]]; then
+        printf '%s\n' "$found"
+        return 0
+    fi
+    for dir in ${KODACHI_PIHOLE_SYSTEM_BIN_DIRS:-/usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin}; do
+        if [[ -f "$dir/$name" && -x "$dir/$name" ]]; then
+            printf '%s\n' "$dir/$name"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # A directory, setupVars.conf, or a stale unit can remain after a failed install.
 # Only an executable Pi-hole producer proves that a retry is unnecessary.
 pihole_runtime_installed() {
-    command -v pihole >/dev/null 2>&1 && command -v pihole-FTL >/dev/null 2>&1
+    pihole_find_executable pihole >/dev/null && pihole_find_executable pihole-FTL >/dev/null
 }
 
 # Shared nonfatal optional-component runner used by the package dispatch. A failed
 # first attempt remains retryable because residue is never treated as installed.
+# Round 3j (2026-10-22, re-inspection 23 R8): is Pi-hole switched on by the user? pihole-FTL
+# active, or its unit enabled (the literal "enabled": `systemctl is-enabled` also exits 0 for
+# static and generated units). Every earlier run of run_optional_pihole_setup disabled it after
+# installing it, so an enabled or running FTL on a system where Pi-hole was already installed is
+# the user's own choice (`dns-switch pihole-enable`).
+pihole_user_enabled() {
+    local unit=""
+    for unit in pihole-FTL.service pihole-FTL; do
+        systemctl is-active --quiet "$unit" 2>/dev/null && return 0
+        [[ "$(systemctl is-enabled "$unit" 2>/dev/null)" == "enabled" ]] && return 0
+    done
+    return 1
+}
+
 run_optional_pihole_setup() {
     local install_log="${KODACHI_PIHOLE_INSTALL_LOG:-/var/log/kodachi-pihole-install.log}"
+    local installed_now=false
 
     if pihole_runtime_installed; then
         print_info "Pi-hole executable already present; skipping reinstall (optional component)"
     else
         print_step "kodachi-system-setup: installing Pi-hole (optional component; disabled by default)"
+        installed_now=true
         if KODACHI_PIHOLE_PACKAGE_CONTEXT=1 install_pihole >"$install_log" 2>&1; then
-            print_success "Pi-hole installed (disabled by default)"
+            # install_pihole also returns 0 when it installed nothing (inside the kodachi-pihole
+            # package with no offline payload), so the runtime is checked before claiming an install.
+            if pihole_runtime_installed; then
+                print_success "Pi-hole installed (disabled by default)"
+            else
+                print_info "Pi-hole not installed: its installer found nothing to install on this system (log: $install_log). Pi-hole is disabled by default - continuing."
+            fi
         else
             print_info "Pi-hole optional component skipped (its installer did not complete on this system; log: $install_log). Pi-hole is disabled by default - continuing."
         fi
+    fi
+
+    # Round 3j (2026-10-22, re-inspection 23 R8): kodachi-pihole's postinst runs this on EVERY
+    # configure, upgrades included, and the forced disable below stopped FTL and removed every
+    # dns-switch Pi-hole rule, so a user who had switched Pi-hole on lost it at each package upgrade.
+    # "Disabled by default" is for a Pi-hole this run installed (its upstream installer can leave FTL
+    # enabled) and for the image build (chroot); one the user switched on afterwards stays on.
+    if [[ "$installed_now" != "true" ]] && ! is_chroot_environment && pihole_user_enabled; then
+        print_info "Pi-hole is switched on on this system (pihole-FTL active or enabled); left as it is. 'dns-switch pihole-disable' turns it off."
+        return 0
     fi
 
     declare -f ensure_pihole_disabled >/dev/null 2>&1 && {
@@ -7006,8 +7198,9 @@ install_pihole() {
         print_success "Pi-hole is already installed"
 
         # Try to get Pi-hole status
-        if command -v pihole &>/dev/null; then
-            pihole status 2>/dev/null | head -5 || true
+        local pihole_cli=""
+        if pihole_cli="$(pihole_find_executable pihole)"; then
+            "$pihole_cli" status 2>/dev/null | head -5 || true
         fi
 
         # Ensure Pi-hole is configured for port 5353
@@ -7195,7 +7388,7 @@ install_pihole() {
         fi
 
         # Show web interface info if available
-        if command -v pihole &>/dev/null; then
+        if pihole_find_executable pihole >/dev/null; then
             echo ""
             print_info "Pi-hole Web Interface:"
             echo "  URL: http://$(hostname -I | awk '{print $1}')/admin"
@@ -8267,7 +8460,7 @@ fi
 echo ""
 print_step "Checking Pi-hole..."
 PIHOLE_INSTALLED=false
-if systemctl is-active --quiet pihole-FTL 2>/dev/null || command -v pihole &>/dev/null; then
+if systemctl is-active --quiet pihole-FTL 2>/dev/null || pihole_find_executable pihole >/dev/null; then
     echo -e "  ${GREEN}✓${NC} Pi-hole - installed"
     PIHOLE_INSTALLED=true
     if systemctl is-active --quiet pihole-FTL 2>/dev/null; then
@@ -8434,8 +8627,32 @@ apt_parity_system_cleanup() {
         stop_and_disable_service "v2ray.service" "V2Ray Proxy" "v2ray"
         stop_and_disable_service "xray.service" "Xray Proxy" "xray"
         stop_and_disable_service "haproxy.service" "HAProxy Load Balancer" "haproxy"
-        stop_and_disable_service "tor.service" "Tor Service" "tor"
-        stop_and_disable_service "tor@default.service" "Tor Default Instance" ""
+        # NOT ON AN UPGRADE (2026-10-12, release round apt-upgrade gate). The postinst exports
+        # KODACHI_CONFIGURE_FROM (the version it replaces; empty on a first install). On an upgrade
+        # this used to stop tor.service and KILL EVERY `tor` PROCESS BY NAME, which includes the
+        # instances tor-switch manages for the user: measured on the live test VM, `apt upgrade`
+        # <lab-host>-27 -> -28 left Tor down ("already stopped (no matching PIDs)") until something
+        # restarted it. A first install (and the ISO chroot) still neutralizes the distro units as
+        # before. An upgrade leaves the running Tor alone, because tor-switch already owns it, and
+        # only puts boot-time enablement back to the first-install state: a unit that is plainly
+        # `enabled` (an apt install from before this cleanup reached the apt path, or one re-enabled
+        # since) loses its links. `disable` without --now stops nothing.
+        if [[ -n "${KODACHI_CONFIGURE_FROM:-}" ]]; then
+            echo -e "  ${BLUE}ℹ${NC} Upgrade from ${KODACHI_CONFIGURE_FROM}: Tor left running (tor-switch manages it); tor.service and tor@default not stopped"
+            local _tor_unit
+            for _tor_unit in tor.service tor@default.service; do
+                if [[ "$(systemctl is-enabled "$_tor_unit" 2>/dev/null)" == "enabled" ]]; then
+                    if systemctl disable "$_tor_unit" >/dev/null 2>&1; then
+                        echo -e "  ${GREEN}✓${NC} Boot start disabled: ${_tor_unit} (left running)"
+                    else
+                        echo -e "  ${YELLOW}!${NC} Could not disable boot start: ${_tor_unit}"
+                    fi
+                fi
+            done
+        else
+            stop_and_disable_service "tor.service" "Tor Service" "tor"
+            stop_and_disable_service "tor@default.service" "Tor Default Instance" ""
+        fi
         stop_and_disable_service "kloak.service" "Kloak Keystroke Anonymization" "kloak"
         stop_and_disable_service "ram-wipe-kexec-prepare.service" "RAM Wipe Kexec Prepare" ""
     fi
@@ -8590,6 +8807,24 @@ remove_pihole_firewall_redirects_for_cmd() {
             while "$firewall_cmd" -t nat -C "$chain" -p "$proto" --dport 53 -j REDIRECT --to-port 5353 >/dev/null 2>&1; do
                 "$firewall_cmd" -t nat -D "$chain" -p "$proto" --dport 53 -j REDIRECT --to-port 5353 >/dev/null 2>&1 || break
             done
+            # Round 3j (2026-10-22): dns-switch tags its rules "kodachi-pihole" since then.
+            while "$firewall_cmd" -t nat -C "$chain" -p "$proto" --dport 53 -m comment --comment kodachi-pihole -j REDIRECT --to-port 5353 >/dev/null 2>&1; do
+                "$firewall_cmd" -t nat -D "$chain" -p "$proto" --dport 53 -m comment --comment kodachi-pihole -j REDIRECT --to-port 5353 >/dev/null 2>&1 || break
+            done
+        done
+    done
+
+    # Round 3j (re-inspection 22, P4): dns-switch's loopback ACCEPT exceptions in nat OUTPUT go with
+    # the redirects, in both forms. Left behind, an ACCEPT for port 53 to the loopback sits ahead of a
+    # later torrify's DNS redirect and lets lookups to 127.0.0.1:53 skip Tor's DNSPort.
+    local loopback="127.0.0.1"
+    case "$(basename "$firewall_cmd")" in ip6tables*) loopback="::1" ;; esac
+    for proto in udp tcp; do
+        while "$firewall_cmd" -t nat -C OUTPUT -p "$proto" --dport 53 -d "$loopback" -j ACCEPT >/dev/null 2>&1; do
+            "$firewall_cmd" -t nat -D OUTPUT -p "$proto" --dport 53 -d "$loopback" -j ACCEPT >/dev/null 2>&1 || break
+        done
+        while "$firewall_cmd" -t nat -C OUTPUT -p "$proto" --dport 53 -d "$loopback" -m comment --comment kodachi-pihole -j ACCEPT >/dev/null 2>&1; do
+            "$firewall_cmd" -t nat -D OUTPUT -p "$proto" --dport 53 -d "$loopback" -m comment --comment kodachi-pihole -j ACCEPT >/dev/null 2>&1 || break
         done
     done
 }
@@ -8607,6 +8842,17 @@ remove_pihole_firewall_redirects() {
         removed_any=true
     fi
 
+    # Round 3j (2026-10-22): a set left in the backend `iptables` no longer points to is removed
+    # too. An installed Debian system starts on iptables-nft and tor-switch switches the
+    # alternative to legacy, which left dns-switch's redirects live in nft and invisible here.
+    local backend=""
+    for backend in iptables-legacy iptables-nft ip6tables-legacy ip6tables-nft; do
+        if command -v "$backend" >/dev/null 2>&1; then
+            remove_pihole_firewall_redirects_for_cmd "$(command -v "$backend")"
+            removed_any=true
+        fi
+    done
+
     if [[ "$removed_any" == "true" ]]; then
         print_success "Removed any Pi-hole DNS redirect rules (53 -> 5353)"
     else
@@ -8614,19 +8860,63 @@ remove_pihole_firewall_redirects() {
     fi
 }
 
+# Round 3j (re-inspection 23 R5, 25 R3): the save-format lines that can be dns-switch's Pi-hole rules,
+# under the rules of cli-core's dns_switch_pihole_rule_lines (the one predicate tor-switch, routing-switch
+# and dns-switch read): chain OUTPUT or PREROUTING; no comment (before round 3j) or dns-switch's own
+# `kodachi-pihole` (tor-switch tags all of its rules `tor-*`); no negated match; port 53 and the REDIRECT
+# target 5353 as whole tokens.
+# A FUNCTION, not a top-level pattern variable: extract-system-setup.py copies functions only, and
+# kodachi-system-setup.sh would read an empty pattern, which matches every line.
+pihole_save_has_redirect() {
+    awk '/^-A (OUTPUT|PREROUTING) / && !/[[:space:]]![[:space:]]/' \
+        | awk '/--comment/ && !/--comment[[:space:]]+"?kodachi-pihole"?([[:space:]]|$)/ {next} {print}' \
+        | grep -Eq -- '--dport[[:space:]]+53([[:space:]].*)?[[:space:]]-j[[:space:]]+REDIRECT[[:space:]]+--to-ports?[[:space:]]+5353([[:space:]]|$)'
+}
+
+# Round 3j (re-inspection 24 P2, 25 R2/R3, 26 P1/P3): the nft listing under the SAME rules as the
+# save-format check and cli-core's predicate. dns-switch's rules reach nft only through iptables-nft, so
+# only the tables `iptables -t nat` maps to are read (`ip nat`, `ip6 nat`; tor-switch's own tables and any
+# other nft table are left out by that alone); in them chains OUTPUT and PREROUTING; a rule carries its
+# comment at the end there (`... redirect to :5353 comment "tor-dns"`), so no comment or dns-switch's own
+# kodachi-pihole; no negated match at all (`!=` is nft's `!`); only a `redirect` (dns-switch never writes
+# a DNAT); port 53 and the target :5353 as whole tokens (`dport 5353`, `:53530` are not Pi-hole's).
+pihole_nft_has_redirect() {
+    awk '/^table /{nat = ($2 ~ /^ip6?$/ && $3 == "nat"); chain = ""}
+         /^[[:space:]]*chain /{chain = $2}
+         nat && (chain == "OUTPUT" || chain == "PREROUTING") && !/[[:space:]]!=[[:space:]]/' \
+        | awk '/comment "/ && !/comment "kodachi-pihole"/ {next} {print}' \
+        | grep -Eq '(^|[[:space:]])dport[[:space:]]+53[[:space:]].*redirect to[[:space:]]+:?5353([[:space:]]|$)'
+}
+
 pihole_firewall_redirects_present() {
     local rules=""
 
     if command -v iptables-save >/dev/null 2>&1; then
         rules="$(iptables-save 2>/dev/null || true)"
-        if printf '%s\n' "$rules" | grep -Eq -- '--dport[[:space:]]+53.*REDIRECT.*5353'; then
+        if printf '%s\n' "$rules" | pihole_save_has_redirect; then
             return 0
         fi
     fi
 
+    # Round 3j (2026-10-22): every xtables backend, each through its own save tool, so a
+    # redirect left in the backend `iptables-save` does not read counts (see
+    # remove_pihole_firewall_redirects).
+    local save_tool=""
+    for save_tool in iptables-legacy-save iptables-nft-save ip6tables-legacy-save ip6tables-nft-save; do
+        if command -v "$save_tool" >/dev/null 2>&1; then
+            rules="$("$save_tool" 2>/dev/null || true)"
+            if printf '%s\n' "$rules" | pihole_save_has_redirect; then
+                return 0
+            fi
+        fi
+    done
+
     if command -v nft >/dev/null 2>&1; then
-        rules="$(nft list ruleset 2>/dev/null || true)"
-        if printf '%s\n' "$rules" | grep -Eq 'dport[[:space:]]+53.*(redirect to[[:space:]]+5353|dnat.*5353)'; then
+        # Round 3j (re-inspection 22, P5): nft prints `redirect to :5353`, with a colon the old
+        # pattern lacked, so it never matched. Only `ip nat` and `ip6 nat` are read (where
+        # iptables-nft puts dns-switch's rules; re-inspection 26 P3), so tor-switch's own tables
+        # (cli-core's TOR_SWITCH_NFT_TABLES) and every other nft table are left out by construction.
+        if nft list ruleset 2>/dev/null | pihole_nft_has_redirect; then
             return 0
         fi
     fi
@@ -8930,7 +9220,7 @@ PIHOLE_KEEP=false  # Default: stop Pi-hole for security
 PIHOLE_DISABLE_VERIFIED=true
 
 # Check if Pi-hole is installed
-if command -v pihole &>/dev/null || systemctl list-unit-files 2>/dev/null | grep -q "^pihole-FTL"; then
+if pihole_find_executable pihole >/dev/null || systemctl list-unit-files 2>/dev/null | grep -q "^pihole-FTL"; then
     echo -e "  ${GREEN}✓${NC} Pi-hole is installed"
 
     # In interactive or non-auto mode, ask user
@@ -9825,7 +10115,7 @@ if command -v ss &>/dev/null; then
 fi
 
 # Display Pi-hole configuration if it was intentionally kept running
-if [[ "$PIHOLE_KEEP" == "true" ]] && systemctl is-active --quiet pihole-FTL 2>/dev/null && command -v pihole &>/dev/null; then
+if [[ "$PIHOLE_KEEP" == "true" ]] && systemctl is-active --quiet pihole-FTL 2>/dev/null && pihole_find_executable pihole >/dev/null; then
     print_step "Checking Pi-hole..."
     echo -e "  ${GREEN}✓${NC} Pi-hole - installed"
     echo -e "  ${GREEN}✓${NC} Pi-hole FTL service - running"
@@ -9851,13 +10141,13 @@ if [[ "$PIHOLE_KEEP" == "true" ]] && systemctl is-active --quiet pihole-FTL 2>/d
     # the user needs to see the password once.
     if is_chroot_environment; then
         print_info "Build chroot detected, not generating a Pi-hole web password (set on first activation)"
-    elif command -v pihole &>/dev/null; then
+    elif pihole_cli_path="$(pihole_find_executable pihole)"; then
         # Generate random password and set it with confirmation
         new_pihole_password=$(generate_pihole_password)
         if [[ -n "$new_pihole_password" ]]; then
             # Set password with double confirmation (Pi-hole requires confirmation)
             # Redirect all output to prevent background curl errors
-            if printf "%s\n%s\n" "$new_pihole_password" "$new_pihole_password" | pihole setpassword &>/dev/null; then
+            if printf "%s\n%s\n" "$new_pihole_password" "$new_pihole_password" | "$pihole_cli_path" setpassword &>/dev/null; then
                 echo -e "      ${CYAN}Web Interface password:${NC} $new_pihole_password"
                 echo -e "      ${YELLOW}Password has been set - please save this password!${NC}"
             else
@@ -9886,7 +10176,7 @@ elif [[ "$PIHOLE_KEEP" == "false" ]] && [[ "$PIHOLE_DISABLE_VERIFIED" != "true" 
 fi
 
 # Final check for Pi-hole installation
-if ! systemctl is-active --quiet pihole-FTL 2>/dev/null && ! command -v pihole &>/dev/null; then
+if ! systemctl is-active --quiet pihole-FTL 2>/dev/null && ! pihole_find_executable pihole >/dev/null; then
     echo ""
     print_warning "IMPORTANT: Pi-hole was not installed!"
     echo ""

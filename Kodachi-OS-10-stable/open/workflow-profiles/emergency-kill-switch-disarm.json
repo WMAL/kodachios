@@ -50,7 +50,7 @@
       "id": 2,
       "type": "command",
       "cmd": "health-control kill-switch-status",
-      "description": "Check whether the kill switch high-alert flag is armed/disarmed. Shows armed time and trigger count. Arming is a state flag, not a monitor: nothing is watching and nothing auto-fires. Does NOT activate anything - just displays current status.",
+      "description": "Check whether the kill switch high-alert flag is armed/disarmed. Shows armed time and trigger count. Arming is a state flag, not a monitor: nothing is watching and nothing auto-fires. Also reports what the firewall enforces: enforced (an egress deny covering IPv4 is in place; an IPv6-only deny does not count), traffic_blocked (true only when ALL outbound traffic is blocked, IPv6 included or disabled in the kernel), egress_allowlist (tor, tunnel, public_address, other: what the deny still lets through, e.g. Tor under torrify; other means an exception that can let any traffic out) and egress_deny_scope (all, except_allowlist, ipv4_only, ipv6_only, none). Does NOT activate anything - just displays current status.",
       "condition": {
         "type": "always"
       },
@@ -112,7 +112,7 @@
       "id": 4,
       "type": "command",
       "cmd": "health-control kill-switch-status",
-      "description": "Check whether the kill switch high-alert flag is armed/disarmed. Shows armed time and trigger count. Arming is a state flag, not a monitor: nothing is watching and nothing auto-fires. Does NOT activate anything - just displays current status.",
+      "description": "Check whether the kill switch high-alert flag is armed/disarmed. Shows armed time and trigger count. Arming is a state flag, not a monitor: nothing is watching and nothing auto-fires. Also reports what the firewall enforces: enforced (an egress deny covering IPv4 is in place; an IPv6-only deny does not count), traffic_blocked (true only when ALL outbound traffic is blocked, IPv6 included or disabled in the kernel), egress_allowlist (tor, tunnel, public_address, other: what the deny still lets through, e.g. Tor under torrify; other means an exception that can let any traffic out) and egress_deny_scope (all, except_allowlist, ipv4_only, ipv6_only, none). Does NOT activate anything - just displays current status.",
       "condition": {
         "type": "always"
       },

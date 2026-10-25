@@ -474,7 +474,7 @@ def build(title, age, blocks):
 def touch_token(reason):
     """Tell the launcher this process is alive and going to draw.
 
-    BUG-16, <agent>. The token used to be touched ONLY from an idle
+    BUG-16. The token used to be touched ONLY from an idle
     handler after the whole window had been built, while the launcher waits
     just 3 seconds for it. Building a long report is not free, and on a VM at
     load 12-16 on 4 cores the layout alone can outlast the budget. The launcher

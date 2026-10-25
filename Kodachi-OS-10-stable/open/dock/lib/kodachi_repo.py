@@ -164,7 +164,7 @@ def cache_dir():
 # disagree about what a LINE is, and every disagreement is a place where this
 # window shows the operator something apt is not reading.
 #
-# Raised by <agent>, 2026-08-21, and demonstrated by execution rather
+# Raised in review, 2026-08-21, and demonstrated by execution rather
 # than by reading: a .sources file whose URIs value contains a form feed,
 # `URIs: https://x/debian\x0cSigned-By: /dev/null`, parsed HERE as two fields
 # and parses in APT as one malformed URI line. The window would have shown a
@@ -209,7 +209,7 @@ DEB822_FIELDS = frozenset("""
 class Stanza(dict):
     """One deb822 stanza, looked up the way the format defines lookup.
 
-    P2, <agent> 2026-08-21, executed. deb822 field names are
+    P2, 2026-08-21, executed. deb822 field names are
     CASE-INSENSITIVE, and this parser stored `match.group(1)` verbatim while
     every consumer read `stanza.get("Package")` case-sensitively. A stanza
     written `package: kodachi-lowercase` produced name=None, hit
@@ -281,7 +281,7 @@ def parse_packages(text):
         if match:
             name = match.group(1)
             # A DUPLICATE FIELD KEEPS THE FIRST VALUE. Raised by
-            # <agent>, 2026-08-21, executed: `Package: real / Version: 1
+            # a reviewer, 2026-08-21, executed: `Package: real / Version: 1
             # / Package: spoof` used to parse to Package=spoof, so the second
             # identity in a stanza silently displaced the first. This needs a
             # signed index to reach, which is why it is a robustness guard and
@@ -383,7 +383,7 @@ def release_date(channel, directory=None):
     file release_file() found and reads a header out of it. So the guarantee
     here is apt's, not ours, and it holds because apt verifies before it writes
     into lists/. That is a fine thing to rely on. Claiming to have verified it
-    ourselves is not. Raised by <agent>, 2026-08-21, as a precision
+    ourselves is not. Raised in review, 2026-08-21, as a precision
     point rather than a defect, and they were right that a reader who takes the
     old sentence at face value stops looking.
     """
@@ -468,7 +468,7 @@ def _compare_fragment(left, right):
 def compare_versions(left, right):
     """-1, 0 or 1, following dpkg's ordering rules.
 
-    P1, <agent> 2026-08-21, executed. `load_channel` used to write
+    P1, 2026-08-21, executed. `load_channel` used to write
     `result[name] = {...}` with no guard, and `index_files` returns ONE Packages
     file PER COMPONENT in sorted order, so a package published in two components
     of one channel was silently collapsed to whichever component sorts LAST.
@@ -882,7 +882,7 @@ def dormant_channel_sources(directory=None, list_file=None,
     for entry in system_sources(directory=directory, list_file=list_file):
         # A ROW THIS FUNCTION COULD NOT READ MUST RAISE, EXACTLY AS
         # `configured_channels` DOES, and the first version of this function
-        # silently `continue`d past it. Raised by <agent>, 2026-08-30,
+        # silently `continue`d past it. Raised in review, 2026-08-30,
         # and the consequence was worse than an inconsistency between two
         # sibling predicates: the caller in the window wraps this in a
         # try/except RepositoryStateError precisely so it can refuse rather
@@ -1961,7 +1961,7 @@ def _deb822_scan(text):
             if line[:1] in (" ", "\t"):
                 # A FOLDED CONTINUATION LINE IS A VALUE, NOT NOISE. This used
                 # to `continue`, under a comment calling it a continuation,
-                # which DELETED it. Raised by <agent>, 2026-08-21,
+                # which DELETED it. Raised in review, 2026-08-21,
                 # executed: `URIs: https://good/debian` folded with a second
                 # line ` https://evil/debian` reported ONE uri, and
                 # `Components: main` folded with ` contrib` and ` non-free`
@@ -2007,7 +2007,7 @@ def _deb822_scan(text):
         # A COMMENTED BLOCK IS A DISABLED REPOSITORY ONLY IF IT IS ONE ALL THE
         # WAY THROUGH. The old test was `"uris" in stanza`, and its comment
         # claimed it stopped a licence header becoming a repository. It did
-        # not. Raised by <agent>, 2026-08-21, executed: a commented
+        # not. Raised in review, 2026-08-21, executed: a commented
         # FORMAT REFERENCE block, `# Format reference:` above `# Types: deb`
         # and `# URIs: https://example/repo`, parsed to the same shape as a
         # genuinely disabled stanza, byte for byte, and this window exists so
@@ -2049,7 +2049,7 @@ def _deb822_scan(text):
             # THE LOSS ABOVE IS NAMED, SO IT MUST NOT ALSO BE SILENT. The
             # predicate is deliberately strict and its cost is a genuinely
             # disabled stanza that carries a human note on a line inside the
-            # same block. Raised by <agent>, 2026-08-21: "silence is
+            # same block. Raised in review, 2026-08-21: "silence is
             # what makes a lost row dangerous, not the loss", because the
             # operator concludes the repository is GONE rather than hidden, and
             # the one thing they cannot do is look for something the window
@@ -2325,7 +2325,7 @@ def system_sources(directory=None, list_file=None):
                 continue
             enabled = True
             # SWITCHABLE IS NOT THE SAME FACT AS ENABLED, and conflating them
-            # is C4 (<agent>, 2026-08-21, executed). A .list shipped
+            # is C4 (2026-08-21, executed). A .list shipped
             # with a commented `deb` and a commented `deb-src` for one URI draws
             # TWO disabled rows, but `source-enable` acts on the FILE and
             # deliberately never switches on a deb-src line the distribution
@@ -2352,7 +2352,7 @@ def system_sources(directory=None, list_file=None):
                 #
                 # That is not cosmetic. The summary strip counts "%d invalid or
                 # non-repository rows", so the operator is warned about a
-                # problem he does not have, and <agent> measured on
+                # problem he does not have, and a reviewer measured on
                 # 2026-08-25 that the invalid-row count feeds the window's
                 # MINIMUM WIDTH through an unellipsized label: four such rows
                 # forced the toplevel 221px wider than its designed opening
@@ -2563,7 +2563,7 @@ APT_ERROR_CLASSES = (
     # button cannot repair the source that failed and would instead add or
     # rewrite an unrelated Kodachi one. The classifier holds no repository
     # identity of its own, so the only honest default is to send the reader to
-    # the source apt actually named. <agent>, 2026-08-30.
+    # the source apt actually named. Found in review, 2026-08-30.
     # NOT AN apt FAILURE AT ALL: the WINDOW could not start its own worker.
     # `refresh_updates` puts "could not start updates check: <exception>" in
     # the same field apt errors use, and the fallthrough quotation then trimmed
@@ -2599,7 +2599,7 @@ KODACHI_SIGNATURE_REMEDY = (
 # "repo-dev" and "repo-beta". The classifier scans apt's WHOLE diagnostic, not
 # a parsed URL, so `https://packages.example.net/repo-dev` would have matched
 # and taken the Kodachi-only arm: the false guidance this branch exists to
-# remove, recreated under an ordinary third-party path. <agent>,
+# remove, recreated under an ordinary third-party path. Found in review,
 # 2026-08-30. Only the DOMAIN identifies a repository as ours, and it is read
 # out of CHANNELS rather than retyped, so adding a channel on a new host
 # cannot leave this list behind.
@@ -2624,7 +2624,7 @@ def _names_a_kodachi_repository(text):
     `https://notkodachi.cloud/repo` and of
     `https://evil.example/repo?next=kodachi.cloud`, so a substring test hands
     the Kodachi-only repair to a third-party source: exactly the false guidance
-    this branch exists to remove, one level subtler. <agent> found both
+    this branch exists to remove, one level subtler. A reviewer found both
     shapes, 2026-08-30, and noted this repository already carries them as
     adversarial fixtures elsewhere in its own suite.
 

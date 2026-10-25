@@ -88,7 +88,7 @@
     {
       "type": "command",
       "cmd": "sudo health-control offline-microphone --action enable",
-      "description": "Manage microphone device",
+      "description": "Manage microphone device. disable mutes ALSA capture and every current non-monitor desktop-session source, writes the mute again to any source that reads back unmuted, succeeds only after two consecutive all-muted reads, then installs the persistent guard. enable reverses it. check reports the policy state",
       "condition": {
         "type": "always"
       },
@@ -105,7 +105,7 @@
         "destructive": false,
         "workflow_safe": true,
         "shell_safe": true,
-        "confirm_copy": "Confirm this workflow step before execution: Manage microphone device",
+        "confirm_copy": "Confirm this workflow step before execution: Manage microphone device. disable mutes ALSA capture and every current non-monitor desktop-session source, writes the mute again to any source that reads back unmuted, succeeds only after two consecutive all-muted reads, then installs the persistent guard. enable reverses it. check reports the policy state",
         "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
       },
       "id": 3,

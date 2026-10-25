@@ -91,8 +91,8 @@
     {
       "id": 3,
       "type": "command",
-      "cmd": "sudo health-control mac-change-all",
-      "description": "Change all MAC addresses",
+      "cmd": "sudo health-control mac-change-all --include-active",
+      "description": "Change the MAC address of every interface except the one carrying the default route (--include-active or --force include it)",
       "condition": {
         "type": "always"
       },
@@ -109,7 +109,7 @@
         "destructive": false,
         "workflow_safe": true,
         "shell_safe": true,
-        "confirm_copy": "Confirm this workflow step before execution: Change all MAC addresses",
+        "confirm_copy": "Confirm this workflow step before execution: Change the MAC address of every interface except the one carrying the default route (--include-active or --force include it)",
         "rollback_hint": "Re-run the matching status command and restore the prior configuration if needed."
       },
       "command_id": "rust.health-control.mac-change-all",
@@ -117,7 +117,8 @@
         "/usr/bin/sudo",
         "-n",
         "/opt/kodachi/dashboard/hooks/health-control",
-        "mac-change-all"
+        "mac-change-all",
+        "--include-active"
       ]
     },
     {

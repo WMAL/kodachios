@@ -43,7 +43,7 @@ readonly PERSISTENT_NAME="kodachi-workbench"
 # An INTERACTIVE bash does not handle SIGTERM, it IGNORES it (SigIgn 0x384004 has
 # the SIGTERM bit set; a non-interactive `bash -c` reads 0x0). Ignoring is the same
 # discard condition as installing no handler, not a milder one. Independently
-# re-derived by <agent> with `unshare -Urpf --mount-proc`, no podman
+# re-derived with `unshare -Urpf --mount-proc`, no podman
 # involved. It also ignores SIGINT, which is why --stop-signal=SIGINT changes
 # nothing; SIGHUP is the one an interactive shell acts on.
 # This is NOT cosmetic. common_security_args puts $MANAGED_LABEL on the disposable
@@ -521,7 +521,7 @@ start_all() {
     ids_text="$(managed_ids all)" || die "could not list managed containers"
     mapfile -t ids <<<"$ids_text"
     if [[ -z "$ids_text" ]]; then
-        # ITEM 9 OF THE OPERATOR'S SCREENSHOT LIST, ROUTED TO ME BY <agent>
+        # ITEM 9 OF THE OPERATOR'S SCREENSHOT LIST, ROUTED TO ME BY A REVIEWER
         # WHO REPRODUCED IT ON .198 AS THE DESKTOP USER. His words at this screen:
         # "what the [expletive] is this". The old sentence was "No Kodachi-managed
         # containers exist." It is TRUE, and that is exactly the problem: on a fresh
@@ -544,7 +544,7 @@ start_all() {
 
 stop_all() {
     # THE STOP-SIGNAL FIX ABOVE CLOSED THE LATENCY HALF OF THIS DEFECT AND LEFT THE
-    # DESTRUCTION HALF EXACTLY WHERE IT WAS, which <agent> caught by reading
+    # DESTRUCTION HALF EXACTLY WHERE IT WAS, which a reviewer caught by reading
     # my own header comment back to me. Before the fix: Stop All matched the
     # operator's live disposable shell, hung 10s, SIGKILLed it, and podman's
     # auto-remove deleted it with its contents. After it: same match, same delete,

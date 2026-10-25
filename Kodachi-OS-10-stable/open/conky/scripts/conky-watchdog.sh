@@ -144,7 +144,7 @@ count_kodachi_conky() {
 # THE DEFECT THIS EXISTS FOR. The healthy band is MIN_PANELS=3..MAX_PANELS=6 for
 # EXPECTED_PANELS=5, so losing one panel leaves 4, which is inside the band, and
 # the watchdog whose entire job is to put panels back calls that healthy and does
-# nothing for the rest of the session. Measured by <agent> on the <lab-host>
+# nothing for the rest of the session. Measured on the <lab-host>
 # live ISO: killed the gauges panel, count went 5 -> 4, and at t+3s, t+15s and
 # t+35s it was still 4 with NO new line in the watchdog log for 90 minutes. Two
 # dead panels would also be tolerated.

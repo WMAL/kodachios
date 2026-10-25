@@ -270,7 +270,7 @@ cached_vps_country() {
     # The correct path is already written down elsewhere in this very file, in the
     # gateway branch of cached_field_value, and this function simply never used it.
     #
-    # Reported by <agent> on the <lab-host> live ISO.
+    # Reported in review on the <lab-host> live ISO.
     # FETCH THE NODES ARRAY AND READ FIELD 0, do NOT ask for a dotted index path.
     # Measured on a test VM: the gateway's snapshot fast path CANNOT index
     # into an array, so `data.online_info.vps.nodes.0.vpscountry` comes back MISS,

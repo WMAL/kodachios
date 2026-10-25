@@ -833,7 +833,7 @@ function draw_gauge_ring(cr, data, value, inner_value)
     --     txt_radius = 30
     --     upper label max y = 70 + 30 = 100
     --     lower label min y = 130 - 30 = 100       COINCIDENT
-    -- Measured on screen by <agent> at 3440x1440 with ORDINARY idle values:
+    -- Measured on screen at 3440x1440 with ORDINARY idle values:
     -- UP=9 (orange) overlapping CPU=55 (cyan), and DOWN=1 touching MEM=57. Any time a
     -- network gauge is low and CPU or MEM is mid-range, which is most of the time,
     -- that spot is unreadable.

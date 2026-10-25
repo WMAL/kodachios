@@ -72,9 +72,9 @@
 # THERE IS NO `trash-folder` _LAUNCH_ ROW ANY MORE, AND THAT IS A REVERSAL.
 # It existed because of a claim that the dustbin APPLET "failed to open on both
 # test VMs", so a deterministic `thunar trash:///` launcher was shipped in its
-# place. THAT CLAIM CARRIES NO EVIDENCE, measured 2026-08-21 by <agent>:
+# place. THAT CLAIM CARRIES NO EVIDENCE, measured 2026-08-21:
 # `git log -S` puts the sentence in 176ce0d44 "feat(cairo-dock): add proposal B
-# quick deck" (<agent>, 2026-08-20 10:34), whose entire commit body is the
+# quick deck" (2026-08-20 10:34), whose entire commit body is the
 # subject line plus an Agent-ID trailer. No VM named, no symptom, no artifact, no
 # date of the observation. So this reversal overturns an unattributed assertion,
 # not a measurement, and it must not be restated as though a test had been run.

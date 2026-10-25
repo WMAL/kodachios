@@ -307,7 +307,7 @@ button.ghost:hover {{ border-color: {BORDER_STRONG}; color: {TEXT_ACCENT};
    and a greyscale screenshot.
 
    SCOPED TO A CLASS `state_toggle()` ADDS, not to `button:checked`. My first
-   version used the bare `button:checked` selector, which <agent> caught:
+   version used the bare `button:checked` selector, which a reviewer caught:
    that matches EVERY checked button in every window that imports this sheet,
    including radio buttons and any toggle nobody routed through the helper, so a
    comment claiming a five-control blast radius sat over a selector with an
@@ -398,7 +398,7 @@ tooltip {{ background-color: {BG_ELEVATED}; color: {TEXT_PRIMARY};
 /* NO `letter-spacing`: `result-title` ELLIPSIZES (it is in
    ELLIPSIZE_TEXT_CLASSES), so spacing clips it. This one survived my first
    pass, which drained .state-fact and .pill and then DECLARED THE CLASS
-   CLOSED while a third member still carried it. Found by <agent>,
+   CLOSED while a third member still carried it. Found in review,
    2026-08-30. See NO_LETTER_SPACING_CLASSES. */
 .result-title {{ color: {TEXT_ACCENT}; font-size: 12px; font-weight: 700; }}
 .result-cmd {{ color: {TEXT_DISABLED}; font-family: {FONT_MONO}; font-size: 11px; }}
@@ -793,7 +793,7 @@ ELLIPSIZE_TOOLTIP_CLASSES = frozenset(("cmd", "result-cmd", "result-title"))
 # enforces it. THAT TEST EXISTS BECAUSE MY FIRST PASS DID NOT DRAIN THE CLASS:
 # I removed the spacing from `.state-fact` and `.pill`, wrote a comment
 # claiming only non-ellipsizing classes still carried it, and left
-# `.result-title` at 0.8px one screen away. <agent> found it by reading
+# `.result-title` at 0.8px one screen away. A reviewer found it by reading
 # the CSS against this very set, 2026-08-30, which is the check the comment
 # was asserting and nothing was performing.
 NO_LETTER_SPACING_CLASSES = frozenset((
@@ -1263,7 +1263,7 @@ class Window(Gtk.Window):
     # THE FIRST VERSION OF THIS COMMENT PRESENTED THEM AS ONE. It recorded
     # `sandbox` asking for 940 against a content minimum of 1036, i.e. a 96px
     # member. That was true when it was taken and is NOT reproducible now.
-    # <agent> measured 1064 against 895 on both the pre-fix and the
+    # A reviewer measured 1064 against 895 on both the pre-fix and the
     # post-fix payload, and I re-derived the whole family independently on
     # 2026-08-26 at master 4e8944ae1 with a positive control in the same run
     # (one window forced to declare 200px, which the predicate correctly
@@ -1283,7 +1283,7 @@ class Window(Gtk.Window):
     #
     # WHAT THIS IS NOT, AND THE FIRST VERSION OF THIS COMMENT SAID IT WAS.
     # I wrote here that 96px "is clipped the moment it appears". That is
-    # WRONG and <agent> refuted it with a positive control on
+    # WRONG and a reviewer refuted it with a positive control on
     # 2026-08-26: GTK3 will not map a toplevel below its content minimum, so
     # a window whose minimum exceeds its requested default simply OPENS AT
     # THE MINIMUM. Nothing is ever clipped on open, and two of the auditor's

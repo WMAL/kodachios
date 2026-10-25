@@ -716,6 +716,18 @@ conky_known_is_true() {
     [[ "$raw" == "true" ]]
 }
 
+# THE BOOT PLACEHOLDER IS NOT AN ERROR (operator, 2026-10-18: "we dont need such a long line on start
+# up in red"). Until conky-status finishes its first runtime detection, slowest right after the ISO
+# boots, the snapshot carries ONE placeholder line in each runtime field (AI agents, VPN, firewall):
+# "${color6}runtime state unknown: detection did not finish" (adapters/system.rs
+# unknown_runtime_block). Printed as it is, that is a long red line that reads like a failure, and a
+# minute later the same field says "no agents running". The field scripts call this predicate and
+# print their own short, neutral "checking..." line instead. It matches the stable phrase only, so a
+# reworded tail in the binary still matches.
+conky_runtime_block_is_pending() {
+    [[ "${1:-}" == *"runtime state unknown"* ]]
+}
+
 conky_gateway_bool_01() {
     local raw="$1"
     raw=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | xargs)

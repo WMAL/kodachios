@@ -35,7 +35,7 @@
 # thunar-uca does not show it. The user clicks and observes nothing: no window,
 # no error, no notification.
 #
-# WHY `env` IS NO LONGER THE PRIMARY FORM (2026-08-26, <agent>'s class
+# WHY `env` IS NO LONGER THE PRIMARY FORM (2026-08-26, a reviewer's class
 # sweep). Passing the variables as arguments to `env` does get them past
 # env_reset, but sudo matches its rules on argv[0], which is then `env`. The four
 # shipped sudoers.d files grant `/usr/bin/thunar` and `/usr/bin/mousepad`
@@ -137,7 +137,7 @@ XAUTH="${XAUTHORITY:-$HOME/.Xauthority}"
 # re-randomised at any time from the dock, so a boot-time repair goes stale. The
 # helper is idempotent and additive (proven: three runs, entry count unchanged),
 # and it grants nothing new, it copies a value already in the caller's own file.
-# Reported by <agent> from a test VM, reproduced independently.
+# Reported in review from a test VM, reproduced independently.
 if [ -n "$XAUTH" ] && command -v kodachi-xauth-hostname-repair.sh >/dev/null 2>&1; then
     XAUTHORITY="$XAUTH" kodachi-xauth-hostname-repair.sh --quiet >/dev/null 2>&1 || true
 fi

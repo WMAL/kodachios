@@ -145,7 +145,7 @@ def live_timezone():
     # /etc/localtime FIRST, and the order is the whole point.
     #
     # I had /etc/timezone first, which reintroduced the exact staleness this
-    # function exists to remove. Caught by <agent>. The producer is
+    # function exists to remove. Caught in review. The producer is
     # health-control TimezoneSync.update_timezone (commands/timezone.rs:805-834):
     # it does `ln -sf /usr/share/zoneinfo/<zone> /etc/localtime` and then
     # `timedatectl set-timezone`, and NEITHER of those writes /etc/timezone.
@@ -335,10 +335,10 @@ def login_word():
 
     Belt and braces, NOT a fix for a known defect. The history is worth keeping
     because it is a good example of a plausible bug that was not one:
-    <agent> traced a client-side asymmetry (online-auth check-login
+    A reviewer traced a client-side asymmetry (online-auth check-login
     rejects is_blocked:true at main.rs:2002 while check-all-status, which the
     conky snapshot is built from, only prints the flag) and read it as "a
-    blocked device renders Signed in: On". <agent> then checked the
+    blocked device renders Signed in: On". A reviewer then checked the
     SERVER, and auth_check.php:352-385 gates every action check-all-status uses
     behind the same block list, before any handler, so a blocked session can
     never reach the field at all. The finding was retracted.

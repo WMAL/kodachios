@@ -735,7 +735,7 @@ def win_tor_exit(target=None, tor_loader=None):
         # a bare command hits the default instance, `-main` writes /etc/tor/torrc
         # (the SYSTEM daemon) and `-all` fans out over the POOLED instances that
         # carry traffic under round-robin / weighted / consistent-hashing.
-        # Reported through <agent> as G30-A: this window pinned `-main`
+        # Reported in review as G30-A: this window pinned `-main`
         # only, so the pooled instances kept NO exit restriction while the radio
         # said Germany. The operator ruled it: picking a country must make ALL of
         # them exit from there. Main runs first because its exit status is the one
@@ -943,7 +943,7 @@ def win_tor_exclude(target=None, tor_loader=None):
         # knowing matters. Five of the presets here hold more than eight, and
         # "Switches every country in the group at once" followed by a truncated
         # list is a tooltip that contradicts its own first clause. Reported by
-        # <agent> 2026-08-23.
+        # a reviewer 2026-08-23.
         #
         # A tooltip is not a place for a scroll bar, so the answer is wrapping,
         # not truncation: atom-preserving wrapping at 72 columns, indented, so a
@@ -1017,7 +1017,7 @@ def win_tor_exclude(target=None, tor_loader=None):
                 "DRY RUN", "info")
             return
         # THE POOLED SCOPE TAKES EXACTLY ONE CALL, AND THE TWO SCOPES DO NOT
-        # BEHAVE THE SAME WAY. G55, found by <agent> against the first
+        # BEHAVE THE SAME WAY. G55, found in review against the first
         # version of this fix: set-exclude-node-main MERGES (merge_exclude_nodes
         # appends to the current ExcludeNodes value), while set-exclude-node-all
         # REPLACES (tor.rs set_exclude_node drops every existing ExcludeNodes /
@@ -1197,7 +1197,7 @@ def load_registry():
         # discards. The blast radius was not one button and not one window:
         # kodachi-command-window did not start AT ALL, so every dock cell
         # that opens one did nothing when clicked, with no error anywhere the
-        # operator could see. Reported by <agent> 2026-08-23 as the
+        # operator could see. Reported in review 2026-08-23 as the
         # worst instance of the G51 class found so far, and it is worse than
         # the wedge that class is named for.
         with open(path, encoding="utf-8", errors="replace") as registry_file:
@@ -1217,7 +1217,7 @@ def load_registry():
                 # columns 5 and 4 and threw column 3 away, so the SAME action
                 # asked when clicked from a dock cell and ran instantly when
                 # clicked from a window row. Measured 2026-08-19 by
-                # <agent> and re-derived here: 95 registry rows carry
+                # a reviewer and re-derived here: 95 registry rows carry
                 # confirm=1, and 40 of the window's references to them had no
                 # confirmation of any kind, including Harden Paranoid (which the
                 # registry's own comment records as having taken two VMs off the
@@ -1357,7 +1357,7 @@ def missing_required_tools(row, command, key=None):
 def needs_confirm(key):
     """Reads the registry's confirm column. THIS WINDOW NO LONGER CONSULTS IT.
 
-    G96-a, <agent>, 2026-08-23, filed this as dead code with a false
+    G96-a, 2026-08-23, filed this as dead code with a false
     docstring. Half right, and the half that is wrong is the half that matters:
     the docstring WAS false, and deleting the function would have silently
     disarmed a red control.
@@ -1488,7 +1488,7 @@ def handler_for(key):
     own load_registry() against the shipped registry, the split is 396 generic,
     242 rofi-output, plus the two singleton handlers `microsocks-enable` and
     `ifspeed-enable` that the old text omitted entirely, for 640 rows. Reported
-    by <agent> and re-derived here independently. So the numbers are not
+    in review and re-derived here independently. So the numbers are not
     restated here, because a count written into prose beside a DERIVED assertion
     can only rot: re-derive it in one command instead, and note that the
     argument above does not depend on the value.
@@ -1689,7 +1689,7 @@ def refresh_status_cache():
         # caller's `if running: return` then refuses to start another refresh
         # for the life of the process. The status panel simply stops updating,
         # with nothing in the UI to say so. Found here 2026-08-23 while fixing
-        # the two reporting vectors <agent> reported in this file.
+        # the two reporting vectors a reviewer reported in this file.
         try:
             while True:
                 try:
@@ -2241,6 +2241,37 @@ def mutates(row):
     return row_effect(row) == "mutating"
 
 
+# A MAC address in any common spelling: six octets joined by ':' or '-'.
+_MAC_TOKEN = re.compile(r"(?i)\b[0-9a-f]{2}(?:[:-][0-9a-f]{2}){5}\b")
+MAC_WITHHELD = "[MAC withheld]"
+
+
+def failure_reason_lines(row, output):
+    """The producer's own REASON lines for a row whose failure text is replaced.
+
+    `failure_summary` replaces the whole failure transcript so a failed identity
+    change never paints the old and new values on screen. That also swallowed a
+    deliberate refusal's reason and remedy: `health-control mac-change-all`
+    exits 1 on a one-NIC laptop and says which interface it kept and that
+    `--force` includes it. A row lists literal markers in `failure_reasons`;
+    each output line containing one is kept, in producer order, once, with any
+    MAC-shaped token replaced. Lines without a marker stay withheld, so the
+    value-free contract of the summary still holds for everything else.
+    """
+    markers = row.get("failure_reasons") if isinstance(row, dict) else None
+    if not markers or not output:
+        return []
+    kept = []
+    for line in str(output).splitlines():
+        line = line.strip()
+        if not line or not any(m in line for m in markers):
+            continue
+        line = _MAC_TOKEN.sub(MAC_WITHHELD, line)
+        if line not in kept:
+            kept.append(line)
+    return kept
+
+
 def display_output(row, output, success=False):
     """Render useful producer output while withholding credential-shaped lines."""
     if success:
@@ -2253,6 +2284,9 @@ def display_output(row, output, success=False):
         summary = row.get("failure_summary")
         if not isinstance(summary, str) or not summary.strip():
             return ""
+        reasons = failure_reason_lines(row, output)
+        if reasons:
+            return redact_secrets("\n".join([summary] + reasons))
         return redact_secrets(summary)
     # Presentation happens BEFORE redaction. Structured producer fields such as
     # ``"password": "..."`` become ordinary labelled lines, and the same
@@ -2267,7 +2301,7 @@ def display_output(row, output, success=False):
 # THIS EXISTS BECAUSE I SHIPPED A CREDENTIAL DISCLOSURE. Commit b2d5a1925 made
 # run_sequence_async() append every successful command's stdout to the visible
 # result panel, to fix the operator's "nothing happens when you enable it" on
-# Decoy traffic. <agent> found what that generalised to: `Connect dante`
+# Decoy traffic. A reviewer found what that generalised to: `Connect dante`
 # is an ordinary generic row (`sudo routing-switch connect dante`), and
 # routing-switch prints the live SOCKS5 credentials on its SUCCESS path,
 # `println!("• Username: {}", user)` and `• Password: {}` at
@@ -2290,7 +2324,7 @@ def display_output(row, output, success=False):
 # controls.
 # THE MARKER IS SEARCHED ANYWHERE IN THE LINE, NOT ANCHORED TO ITS START.
 #
-# <agent> reviewed the first version of this and rejected it: it matched
+# A reviewer read the first version of this and rejected it: it matched
 # `^Password:` and therefore missed a one-line JSON `{"username":"u",
 # "password":"p"}`, a debug line `result: username=u password=p`, a quoted key,
 # and an inline `Authentication username: u password: p`. Failure output is
@@ -2563,7 +2597,7 @@ def _mark_touched(widget, *_args):
 
 # The ONLY producers whose --json payload is allowed to be read UNWRAPPED.
 #
-# <agent>, ROUND 3 finding 2: "the key `data` is absent" was too wide a
+# Review ROUND 3 finding 2: "the key `data` is absent" was too wide a
 # door. It admitted any flat producer, present or future, and a flat shape is
 # usually a producer that failed before it built its envelope rather than one
 # that never had it. Measured on a test VM, 2026-08-23, over all 31
@@ -2664,7 +2698,7 @@ def read_switch(key):
         parameters={"json": True} if json_declared and not json_fixed else {})
     if looks_auth_refused(out):
         return None, "refused"
-    # PARSEABLE IS NOT AUTHORITATIVE. <agent>, ROUND 3 finding 2: this
+    # PARSEABLE IS NOT AUTHORITATIVE. Review ROUND 3 finding 2: this
     # function read a boolean out of any JSON it could parse, whatever the
     # process exit code said and whatever the envelope said about itself. So a
     # failing `license-status` that still printed `has_license:false` painted a
@@ -3263,7 +3297,7 @@ def build_declarative(name, target=None, parent=None):
         # That commit named this line explicitly and routed it to the lane that
         # owned this file; the lane stopped before landing it, so the retraction
         # never reached here. GTK3 will not map a toplevel below its content
-        # minimum (<agent> proved it with a positive control on
+        # minimum (a reviewer proved it with a positive control on
         # 2026-08-26), so a window whose minimum exceeds its requested default
         # simply OPENS AT THE MINIMUM. Nothing was ever clipped on open and
         # nothing ever opened narrow.
@@ -3294,7 +3328,7 @@ def build_declarative(name, target=None, parent=None):
     # Gtk.RadioButton group. A group always holds exactly one active member, so
     # a window with three choice sections had THREE active radios, and Apply
     # appended one command per group. Measured on a test VM by
-    # <agent> driving the real footer button: the vpn window ran
+    # a reviewer driving the real footer button: the vpn window ran
     #     sudo routing-switch connect amneziawg
     #     sudo routing-switch connect wireguard
     #     sudo routing-switch connect remote-tor
@@ -4069,13 +4103,31 @@ def build_declarative(name, target=None, parent=None):
                 pass
 
         def settle_facts(section_key, payload, error):
-            """Land one section's reply on the UI thread. Never call off-thread."""
+            """Land one section's reply on the UI thread. Never call off-thread.
+
+            A REPLY OF THE WRONG SHAPE IS A REASON, NOT A CRASH. The reader hands over whatever
+            JSON the command printed, and this runs as an idle callback on the UI thread, where
+            an AttributeError on a list, a string or a number (or a `data`, `hsi` or attribute
+            that is not an object) used to escape and leave all fourteen rows "reading" for the
+            life of the window: the state the reader's own `finally` was written to close. So
+            the reply is read inside one guard, and anything it raises becomes the panel's own
+            failure state with the reason, through _exc_detail(), which cannot raise.
+            """
             rows = [(r, h) for sec, r, h in fact_rows if id(sec) == section_key]
             if error is not None:
                 unavailable(rows, error)
                 return
+            try:
+                settle_fact_reply(rows, payload)
+            except Exception as exc:
+                unavailable(rows, "unexpected reply from the firmware reader: %s"
+                            % _exc_detail(exc))
 
-            data = (payload or {}).get("data") or {}
+        def settle_fact_reply(rows, payload):
+            """Paint one section from a reply; raises on a reply that is not the expected shape."""
+            if not isinstance(payload, dict):
+                raise TypeError("the reply is a %s, not a JSON object" % type(payload).__name__)
+            data = payload.get("data") or {}
             hsi = data.get("hsi") or {}
 
             # FAIL CLOSED, AND SAY WHY. Four gates, cheapest first. The producer distinguishes
@@ -4193,7 +4245,7 @@ def build_declarative(name, target=None, parent=None):
             except Exception:
                 pass
 
-        def read_facts():
+        def read_fact_sections(settled):
             groups = {}
             for sec, _r, _h in fact_rows:
                 groups.setdefault(id(sec), sec)
@@ -4202,14 +4254,16 @@ def build_declarative(name, target=None, parent=None):
                 if not source:
                     GLib.idle_add(settle_facts, key, None,
                                   "this section declares no source command")
+                    settled.add(key)
                     continue
                 # SAME RESOLVER EVERY OTHER ROW USES. `resolve()` returns the registry's command
                 # string for a (Category, Label) pair, so a fact panel cannot run anything the
                 # registry does not already publish.
                 command = resolve(tuple(source))
                 if not command:
-                    GLib.idle_add(settle_facts, key, None,
-                                  "no registry row for %s / %s" % (source[0], source[1]))
+                    message = "no registry row for %s / %s" % (source[0], source[1])
+                    GLib.idle_add(settle_facts, key, None, message)
+                    settled.add(key)
                     continue
                 # ARGV COMES FROM THE BINDING, NEVER FROM THE REGISTRY STRING.
                 #
@@ -4254,7 +4308,8 @@ def build_declarative(name, target=None, parent=None):
                     argv = contract.argv_for(binding, {}) + ["--json"]
                     fact_timeout = binding["timeoutSeconds"]
                 except (kd.DirectContractError, ValueError) as exc:
-                    GLib.idle_add(settle_facts, key, None, str(exc))
+                    GLib.idle_add(settle_facts, key, None, _exc_detail(exc))
+                    settled.add(key)
                     continue
                 try:
                     out = subprocess.run(argv, capture_output=True, text=True,
@@ -4270,8 +4325,37 @@ def build_declarative(name, target=None, parent=None):
                     if payload is None:
                         raise ValueError("the command produced no JSON")
                     GLib.idle_add(settle_facts, key, payload, None)
+                    settled.add(key)
                 except Exception as exc:
-                    GLib.idle_add(settle_facts, key, None, str(exc))
+                    GLib.idle_add(settle_facts, key, None, _exc_detail(exc))
+                    settled.add(key)
+
+        def read_facts():
+            # EVERY SECTION HEARS BACK, WHATEVER STOPS THE READER. The section
+            # loop settles each section from an explicit branch, but three of
+            # its statements sit outside any handler that covers them: the
+            # grouping, `resolve()`, and the binding lookup, whose handler
+            # catches only DirectContractError and ValueError, so a KeyError on
+            # `timeoutSeconds` or a TypeError escaped. The thread then died and
+            # every fact row it had not reached said "reading" for the life of
+            # the window. The same shape as read_all below: deliver the rest
+            # from a `finally`.
+            #
+            # A SECTION COUNTS AS SETTLED ONLY AFTER ITS idle_add HAS BEEN
+            # QUEUED. Every branch builds its message first, queues it, and
+            # only then records the key, so a message that raises while it is
+            # being built (an exception whose __str__ raises, a short `source`)
+            # leaves the key unrecorded and the finally below settles it. Both
+            # handlers format through _exc_detail(), which cannot raise.
+            settled = set()
+            try:
+                read_fact_sections(settled)
+            finally:
+                for sec, _r, _h in fact_rows:
+                    if id(sec) not in settled:
+                        settled.add(id(sec))
+                        GLib.idle_add(settle_facts, id(sec), None,
+                                      "the reader stopped before this section was read")
 
         def facts_start_failed(_exc):
             for sec, _r, _h in fact_rows:
@@ -4436,7 +4520,7 @@ def build_declarative(name, target=None, parent=None):
             # every pending switch then sits in its loading state for the life
             # of the window. That is worse than a single wedged button because
             # one thread death takes out the whole batch. Reported by
-            # <agent> 2026-08-23 as the third G51 vector.
+            # a reviewer 2026-08-23 as the third G51 vector.
             #
             # `sent` is keyed on id(w) because the widget is the identity the
             # settle callback acts on, and a row dict is not hashable.
@@ -4519,7 +4603,7 @@ def build_declarative(name, target=None, parent=None):
         # SESSION_ENDING_CONFIRM_KEYS for the operator's 2026-08-22 ruling and
         # what it costs.
         #
-        # G96-b, <agent>, 2026-08-23. This comment used to say Apply
+        # G96-b, 2026-08-23. This comment used to say Apply
         # "OBEYS THE REGISTRY'S confirm COLUMN, exactly as the dock cell and rofi
         # do", which `row_needs_confirm()` eleven lines below has contradicted
         # since the ruling landed: it consults the three-key allowlist and
@@ -4927,7 +5011,7 @@ CANCELLED_MARKERS = (
 # matches.
 #
 # I FIRST WROTE THAT IT WAS A SECOND MEMBER OF THE CLASS. IT IS NOT, AND THE
-# ERROR WAS NOT IN THE SWEEP. <agent> re-derived the sweep over the same
+# ERROR WAS NOT IN THE SWEEP. A reviewer re-derived the sweep over the same
 # 1160 .rs files and reproduced my file list EXACTLY, then read the one thing I
 # had not: that println sits in the `_` arm of the match on `outcome_status`,
 # i.e. the FAILED arm, and outcome.rs:87 maps `Partial | Failed` to exit 1. So
@@ -5047,7 +5131,7 @@ def classify_exit(code, text, action=False):
     crash trains the user to ignore the colour.
 
     THE PREDICATE IS THE PRESENCE OF A PAYLOAD KEY, NOT THE NON-EMPTINESS OF A
-    STRING. <agent> shipped a length check on an `output` field this
+    STRING. An earlier change shipped a length check on an `output` field this
     afternoon and it inverted their diagnosis, because the HEALTHY envelope has
     no `output` key at all while the FAILED one has `"output": ""`. A length
     check reads 0 for both and cannot tell absence from emptiness. So: parse the
@@ -5088,7 +5172,7 @@ def classify_exit(code, text, action=False):
     # so a predicate placed after `code == 0` could never run.
     #
     # AND THE `code == 0` IS PART OF THE PREDICATE, NOT A REDUNDANT GUARD.
-    # G47, <agent> 2026-08-23. The class is "exited 0 while saying it
+    # G47, 2026-08-23. The class is "exited 0 while saying it
     # did not do the job", and that definition was written in the comment above
     # instead of in the test, so the test admitted a member the class excludes.
     # health-control's `usb-policy` prints "was NOT applied (USBGuard rejected
@@ -5979,7 +6063,7 @@ def make_surface_opener(parent, row, target=None):
             # "opening" for the life of the window, with no error and no
             # recovery but closing it. Same mechanism as G51: a handler that
             # reads on the page as "launch failure is handled" while being
-            # blind to a sibling exception type. Reported by <agent>
+            # blind to a sibling exception type. Reported in review
             # 2026-08-23, who also killed both operator-reachable triggers
             # they could find, so this is uniformity rather than a live bug.
             # `_exc_detail`, NOT AN f-STRING, AND THE PAIR IS THE POINT.
@@ -7266,6 +7350,11 @@ NETWORK_NAV_ICONS = {
 SECTION_NAV_ICONS = {
     ("workflows", "Connection and session"):
         "fluent-emoji/counterclockwise-arrows-button.png",
+    # Firmware & Platform (077a659e9) and Firmware Reports (e495cd18e) both
+    # open with an org.gnome.Firmware row, so the Status window drew the same
+    # navigation icon twice. The reports section takes the report glyph the
+    # Verify window's Security Report row already ships.
+    ("status", "Firmware Reports"): "papirus/document-viewer.svg",
 }
 
 

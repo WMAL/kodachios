@@ -15,8 +15,8 @@
 #
 # Author: Warith Al Maawali
 # Version: <lab-host>
-# Last updated: 2026-09-17
-# Collector version: 1.8
+# Last updated: 2026-10-19
+# Collector version: 1.12
 #
 # Description:
 # Collects comprehensive system diagnostics for remote troubleshooting
@@ -28,8 +28,9 @@
 # This script does NOT collect browsing history or home folder contents.
 # Only system/service diagnostics are collected, and before packaging every
 # text file is redacted of: routable IP addresses, MAC addresses, WiFi
-# names and credentials, keys and tokens, geolocation fields, current and
-# previous hostnames, human account names and full names, and location data
+# names and credentials, keys and tokens, disk encryption (LUKS) identifiers,
+# the machine ID, geolocation fields, current and previous hostnames, human
+# account names and full names, and location data
 # (time zone region, country, locale; the UTC offset and character set are
 # kept). A login or host name that is very short or an ordinary word is
 # redacted only where the text marks it as one, not in free prose.
@@ -68,7 +69,7 @@ set -Eo pipefail
 # the rest of the stream. Any child that reads stdin therefore eats the rest of
 # the script and bash exits 0 at the spot it stopped, with no error at all.
 #
-# Measured 2026-09-06 on an installed Kodachi VM (<agent>): the served
+# Measured 2026-09-06 on an installed Kodachi VM: the served
 # copy stopped after step [5/16] "Collecting Tor information" with exit 0 and no
 # zip. The culprit was `ausearch -m AVC,USER_AVC -ts today` in that step, which
 # reads its input from stdin whenever stdin is not a tty. Kodachi ships auditd,
@@ -92,7 +93,7 @@ fi
 
 main() {
 
-COLLECTOR_VERSION="1.9"
+COLLECTOR_VERSION="1.12"
 INVOKED_AS="$0"
 INVOKED_ARGS="$*"
 if [[ -f "$0" ]]; then
@@ -445,6 +446,85 @@ safe_copy() {
     [[ -n "${CMD_TIMING_LOG:-}" ]] && printf '%8.2fs rc=%-3s [copy %s bytes] %s\n' "$(awk -v a="$_ct0" -v b="$_ct1" 'BEGIN{print b-a}')" "0" "$file_size" "$src" >> "$CMD_TIMING_LOG" 2>/dev/null
 }
 
+# v1.11 (inspector, 2026-10-15): `systemctl is-active X` PRINTS the state AND exits non-zero for
+# every state but active, so `$(systemctl is-active X || echo unknown)` produced
+# "inactive<newline>unknown" exactly in the states the summary exists to report (journald
+# masked, tor@default stopped by torrify). Print the state once, and "unknown" only when
+# systemctl printed nothing. Usage: kdc_unit_state is-active tor@default.service
+kdc_unit_state() {
+    local v
+    v=$(systemctl "$1" "$2" 2>/dev/null | head -n 1)
+    printf '%s' "${v:-unknown}"
+}
+
+# Is system logging off? ONE answer for every place in this script that reports it, and the SAME
+# predicate health-control uses (classify_journal_liveness in offline_actions.rs): Kodachi's manager
+# drop-in present, OR systemd-journald masked, OR journald not active/reloading. v1.12 (bundle 05cd0a,
+# 2026-10-19): an older health-control masked journald without writing the drop-in, and the summary
+# printed "System Logs: enabled" while nothing had been logged for four days.
+# Prints "DISABLED ...", "enabled" or "unknown (...)".
+kdc_logs_state() {
+    local dropin=/etc/systemd/system.conf.d/90-kodachi-logs-disabled.conf load active since mask
+    if [[ -e "$dropin" || -L "$dropin" ]]; then
+        printf '%s' "DISABLED by Kodachi 'Disable system logs' since $(date -u -r "$dropin" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo unknown) (journal and syslog in this bundle end there)"
+        return 0
+    fi
+    load=$(systemctl show -p LoadState --value systemd-journald.service 2>/dev/null | head -n 1)
+    active=$(systemctl show -p ActiveState --value systemd-journald.service 2>/dev/null | head -n 1)
+    if [[ -z "$load" || -z "$active" ]]; then
+        printf '%s' "unknown (the systemd-journald state could not be read)"
+        return 0
+    fi
+    if [[ "$load" == masked || ( "$active" != active && "$active" != reloading ) ]]; then
+        since=""
+        # The mask symlink's own mtime (stat does not follow it) is when it was masked.
+        for mask in /etc/systemd/system/systemd-journald.service /run/systemd/system/systemd-journald.service; do
+            if [[ -L "$mask" && "$(readlink "$mask" 2>/dev/null)" == /dev/null ]]; then
+                since=" since $(date -u -d "@$(stat -c %Y "$mask" 2>/dev/null || echo 0)" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo unknown)"
+                break
+            fi
+        done
+        printf '%s' "DISABLED (systemd-journald is ${load}/${active}${since}, nothing is being logged; journal and syslog in this bundle end there)"
+        return 0
+    fi
+    printf '%s' "enabled"
+}
+
+# Count the problem lines of a text file for TRIAGE. v1.12 (bundle 05cd0a): a healthy summary such as
+# "corrected: 0, failed: 0" or "errors: 0" matched "fail|error" and ranked a clean log near the top.
+# A line whose only problem word carries a zero count is not a problem line.
+# Round 2 (step-0 inspector row 7): a line that merely CONTAINED a zero-count phrase was dropped
+# whole, so "errors: 0, failed: 3 units", "write failed with error=0x1f", "error: none of the
+# configured DNS servers responded" and "WARN: null pointer" all vanished from TRIAGE. Now each
+# zero-count PHRASE is removed and the REST of the line is tested again; a zero value only counts
+# when a delimiter or the end of the line follows it, so "error=0x1f" and "none of" are not zero.
+# Round 4 (step-0 inspector items 2 and 10): the phrases "0 errors" and "no warnings" are matched by
+# this regex; a "key: value" count is judged by kdc_issue_lines on what FOLLOWS the value, because
+# "errors=0 warnings=0" and "failures: 0 (ok)" are zero counts while "Error: 0 is not a valid port"
+# is a problem line and "errors=0 failed=3" still carries "failed=3".
+KDC_ZERO_COUNT_RE='(^|[^0-9.])0 (errors?|failed|failures?|warnings?)([^a-z]|$)|no (errors?|failures?|warnings?)( found)?([^a-z]|$)'
+kdc_issue_lines() { # <file>: the problem lines, judged on what is left after zero-count phrases
+    # grep -a: a log with a NUL byte (syslog after an unclean shutdown) is still read as text; without
+    # it GNU grep prints "binary file matches" and the file vanished from TRIAGE (round 4, item 2).
+    LC_ALL=C grep -a -iE 'error|fail|panic|denied|warn|traceback|segfault|oom-kill' "$1" 2>/dev/null \
+        | LC_ALL=C awk -v z="$KDC_ZERO_COUNT_RE" '
+            # A key with a zero value is blanked only when what follows ends the count: the end of the
+            # line, a closing mark or comma, an opening bracket (0 only), or the next key=/key: token.
+            function strip_counts(t,   out, r, s, after, ok) {
+                out = ""; r = t
+                while (match(r, /(error|errors|fail|failed|failures|warn|warning|warnings|denied)"?[[:space:]]*[:=][[:space:]]*(0|false|none|null)/)) {
+                    s = substr(r, RSTART, RLENGTH); after = substr(r, RSTART + RLENGTH)
+                    if (s ~ /0$/) ok = (after ~ /^([[:space:]]*$|[[:space:]]*[](,;)}"]|[[:space:]]+[a-z_]+"?[[:space:]]*[:=])/)
+                    else ok = (after ~ /^([[:space:]]*$|[[:space:]]*[],;)}"])/)
+                    out = out substr(r, 1, RSTART - 1) (ok ? " " : s)
+                    r = after
+                }
+                return out r
+            }
+            { t = strip_counts(tolower($0)); gsub(z, " ", t)
+              if (t ~ /error|fail|panic|denied|warn|traceback|segfault|oom-kill/) print $0 }'
+}
+
 # ---- Credential redaction (defense-in-depth) ----
 # audit 2026-05-17 (Conference-Room-A bundle): hooks-results/hooks-config/
 # hooks-logs were copied with NO or incomplete redaction, leaking live
@@ -566,6 +646,12 @@ redact_secrets() {
         # never secrets and never locations, so they are protected here with a
         # token no rule can match, and restored immediately after the three
         # families that would otherwise eat them.
+        # v1.12 (bundle 05cd0a, 2026-10-19): the kodachi-soc posture rows carry "key":"Tor" and eleven
+        # more FIXED words (the pkey values in kodachi-soc snapshot.rs), and the key rule below
+        # redacted all twelve, so the snapshot no longer said WHICH posture row was off. Only those
+        # exact words (and the producer default "-") are protected; any other value under "key" is
+        # still redacted. The JSON key is renamed to a token and restored at the end of this script.
+        s/"key"([[:space:]]*:[[:space:]]*"(Autologin|DiskEnc|DNSCrypt|DNSPath|Firewall|Internet|IPv6|Tor|TorFleet|USBGuard|USBKill|VPN|-)")/"@@KDCPOSTURE@@"\1/g
         s/(^|[^A-Za-z0-9])("?(passphrase|pass[-_]?phrase|master[-_]?password|recovery[-_]?code|seed[-_]?phrase|mnemonic|credential|private-key-password|leap-password|wep-key[0-9]*|preshared[-_]?key|private[-_]?key|privkey|api[-_]?key|apikey|secret[-_]?key|access[-_]?key|client[-_]?secret|access[-_]?token|refresh[-_]?token|session[-_]?token|auth[-_]?token|proxy-authorization|authorization|set-cookie|cookie|password|passwd|secret|token|psk|pass|city|region|region_name|region_code|state_name|country|country_name|country_code|latitude|longitude|lat|lon|loc|postal|postal_code|zip|zip_code|timezone_name|isp|asn|asn_org|org|organization|[A-Za-z0-9_]*_b64|payload|tier_claim|entitlement|licen[cs]e[-_]?key)"?[[:space:]]*[:=][[:space:]]*)(null|true|false)([[:space:]]*[],}]|[[:space:]]*$)/\1\2@@KDCLIT-\4-@@\5/Ig
         s/(^|[^A-Za-z0-9])("?(passphrase|pass[-_]?phrase|master[-_]?password|recovery[-_]?code|seed[-_]?phrase|mnemonic|credential|private-key-password|leap-password|wep-key[0-9]*|preshared[-_]?key|private[-_]?key|privkey|api[-_]?key|apikey|secret[-_]?key|access[-_]?key|client[-_]?secret|access[-_]?token|refresh[-_]?token|session[-_]?token|auth[-_]?token|proxy-authorization|authorization|set-cookie|cookie|password|passwd|secret|token|psk|pass)"?[[:space:]]*[:=][[:space:]]*")[^"]*/\1\2[REDACTED]/Ig
         s/(^|[^A-Za-z0-9])("?(passphrase|pass[-_]?phrase|master[-_]?password|recovery[-_]?code|seed[-_]?phrase|mnemonic|credential|private-key-password|leap-password|wep-key[0-9]*|preshared[-_]?key|private[-_]?key|privkey|api[-_]?key|apikey|secret[-_]?key|access[-_]?key|client[-_]?secret|access[-_]?token|refresh[-_]?token|session[-_]?token|auth[-_]?token|proxy-authorization|authorization|set-cookie|cookie|password|passwd|secret|token|psk|pass)"?[[:space:]]*[:=][[:space:]]*)([^"{}[,@[:space:]][^"}]*)/\1\2[REDACTED]/Ig
@@ -579,7 +665,7 @@ redact_secrets() {
         s/^([[:space:]]*peer:[[:space:]]*)[A-Za-z0-9+/]+=/\1[REDACTED]/
         s/(auth-user-pass[[:space:]])[^"]*/\1[REDACTED]/Ig
         # audit 2026-08-19 round 3, F21. Confirmed independently by
-        # <agent> and <agent>, with a live producer.
+        # two reviewers, with a live producer.
         #
         # EVERY credential rule above requires a `:` or `=` after the key
         # name, because they were written for config files and JSON. An
@@ -605,7 +691,7 @@ redact_secrets() {
         # actually takes a secret there, and ONLY the flags that carry one:
         # microsocks -p is the PORT and stays readable, -P is the password.
         #
-        # F21 SECOND MEMBER, 2026-08-19 (<agent>). The trailing class used to be
+        # F21 SECOND MEMBER, 2026-08-19. The trailing class used to be
         # [^A-Za-z0-9_-], which EXCLUDES a hyphen, so the address did not match
         #     sudo routing-switch microsocks-enable -u <user> -p <password>
         # the Kodachi CLI that starts the proxy. That line IS captured, because the
@@ -636,7 +722,7 @@ redact_secrets() {
         #     sshpass -p SECRET ssh -p 2222 host  ->  the PORT was redacted and
         #                                             the password shipped in clear
         # That is the canonical sshpass invocation against a non-default port, not
-        # an edge case. Found by <agent>, who applied the leftmost-longest
+        # an edge case. Found by a reviewer, who applied the leftmost-longest
         # argument below back to the bridge itself.
         # So each bridge is a repetition over WHOLE TOKENS, and the token
         # alternation cannot match a token that begins with the flag being bound.
@@ -652,7 +738,7 @@ redact_secrets() {
         # redacts its port: `sshpass -f /run/pw ssh -p 2222 host` lost the 2222.
         # That is destruction rather than a leak, and narrowing here cannot
         # create a leak because the excluded tokens exclude -p by definition.
-        # Residual raised by <agent>, who judged it acceptable; it was
+        # Residual raised by a reviewer, who judged it acceptable; it was
         # three characters to close, so it is closed.
         # THE CONTINUATION TOKEN ALSO STOPS AT `<` AND `>`. Without that, the walk
         # eats a shell REDIRECT and leaves a dangling fragment:
@@ -663,7 +749,7 @@ redact_secrets() {
         # FIRST character of a continuation token only: excluding <> from the
         # second class too would break a spaced password whose later word contains
         # `>` (`-P My Pa>ss`), which is a real shape and is tested.
-        # Found by <agent>, 2026-08-20.
+        # Found in review, 2026-08-20.
         # THE VALUE IS MULTI-TOKEN ON THE FOUR microsocks GATES AND SINGLE-TOKEN
         # EVERYWHERE ELSE, and that asymmetry is load-bearing. A one-token value
         # ([^[:space:]]+) leaks everything after the first SPACE in a password,
@@ -678,7 +764,7 @@ redact_secrets() {
         # rather than unknown: routing-switch starts ss-local with a CONFIG FILE
         # (protocols/clients/shadowsocks.rs:200, CONFIG_ARG plus a path), so this
         # product never emits `ss-local -k` at all and nothing establishes what
-        # follows the key on a hand-typed line. Found by <agent>.
+        # follows the key on a hand-typed line. Found in review.
         # KNOWN RESIDUAL, deliberate: a flag REPEATED on one command line is
         # redacted only on its first occurrence, because /g resumes past the
         # program name. Closing it needs a :label + t loop, whose termination
@@ -690,7 +776,7 @@ redact_secrets() {
         # `mysql` is a directory name (/var/lib/mysql), a service name and a log
         # path, so it is a common token by the same test, and this product has no
         # mysql client producer at all (the only repo hit is this file).
-        # Found by <agent> applying my own rule back to a rule I kept.
+        # Found by a reviewer applying my own rule back to a rule I kept.
         #
         # microsocks daemon: -P is the password, -u the user, and -p is the PORT
         # and must stay readable. microsocks.rs:192-197 is the producer.
@@ -722,13 +808,13 @@ redact_secrets() {
         # and the daemon rule above cannot reach it: the trailing boundary excludes
         # a hyphen, so `microsocks-enable` does not match `microsocks`. The two
         # addresses are therefore disjoint, which is what makes this safe, because
-        # the flag meanings INVERT between them. Found by <agent>.
+        # the flag meanings INVERT between them. Found in review.
         #   daemon:  microsocks        -P password   -p PORT
         #   CLI:     microsocks-enable -p password   --port PORT  (long only)
         # routing-switch/src/main.rs:374-387 declares -u/--username, -p/--password
         # and a long-only --port, so lowercase -p here is unambiguously the secret
         # and there is no short port flag to protect.
-        # audit 2026-08-19 round 4, F23. <agent> measured the rules above
+        # audit 2026-08-19 round 4, F23. A reviewer measured the rules above
         # against five argv grammars. Grammars 4 and 5 put the separator INSIDE one
         # argv token (curl -u user:pass, smbclient -U user%pass, 7z -pSECRET, and the
         # attached -PSECRET), so no whitespace-anchored rule can reach them.
@@ -774,6 +860,71 @@ redact_secrets() {
         # a structural brace at "/sbin/linssid":{...} and a 676 KB file stopped
         # parsing. Found by parsing every JSON in a real bundle, not by reading.
         s/(^|[^A-Za-z0-9_-])("?e?ssid"?[[:space:]]*[:=][[:space:]]*"?)[^"{},]*/\1\2[REDACTED-SSID]/Ig
+        # v1.10 (user debug bundle 70730c, 2026-10-15): NetworkManager names the Wi-Fi
+        # network in its own journal and syslog lines, which carry no ssid= key, so the
+        # rule above never saw them, while the wpa_supplicant SSID= lines it does see
+        # were redacted. That bundle, posted publicly, named the home network in the
+        # journal, syslog and the routing-switch log. Each shape below is anchored on
+        # the NetworkManager wording around the name (x27 is the single quote, which
+        # this single-quoted script cannot spell).
+        # An SSID may itself contain a quote (Bob\x27s iPhone, Cafe "Free" WiFi), so the
+        # name is never matched as "anything but a quote", which stopped at the embedded
+        # quote and published the rest (inspector, round 2). Each rule instead runs to
+        # the fixed text NetworkManager prints AFTER the name, or the end of the line.
+        #
+        # Round 3 (inspector): the round-2 rule knew only " has " after "(wifi)
+        # connection", so an open network ("connection X requires no security") passed
+        # through. The suffix list below is every text NetworkManager 1.52 prints after
+        # a quoted connection or access point name, taken from the format strings in
+        # /usr/sbin/NetworkManager and libnm-device-plugin-wifi.so (strings(1) on the
+        # 1.52.1 binaries): " (", " has ", " requires ", " controller ", " attached
+        # as ", " could not ", " auto-activation ", " is no longer ", " disappeared",
+        # " now blocked", " because ", " failed", " succeeded", " can... be activated",
+        # " for connection ", ": ", end of line. Unknown text after a name is never a
+        # reason to publish it: on a NetworkManager line, a quoted connection or access
+        # point name that no rule above replaced is redacted to the end of the line by
+        # the fallback rule after this group.
+        s/((connection|access point|Activation of|controller) \x27).*(\x27( \(| has | requires | controller | attached as | could not | auto-activation | is no longer | disappeared| now blocked| because | failed| succeeded| can.t be activated| for connection |: )|\x27[[:space:]]*$)/\1[REDACTED-SSID]\3/Ig
+        s/(added connection [^ ,]+,\x27).*(\x27 \()/\1[REDACTED-SSID]\2/Ig
+        s/((connection|profile) ").*(" \(|"[[:space:]]*$)/\1[REDACTED-SSID]\3/Ig
+        s/(policy: set \x27).*(\x27 \()/\1[REDACTED-SSID]\2/Ig
+        s/(roamed from BSSID [^ ]+ \().*(\) to [^ ]+ \().*\)([[:space:]]*)$/\1[REDACTED-SSID]\2[REDACTED-SSID])\3/Ig
+        s/(error setting SSID to ).*(: [^:]*)$/\1[REDACTED-SSID]\2/Ig
+        /NetworkManager/{/(connection|access point|Activation of|controller) \x27\[REDACTED-SSID\]/I!s/((connection|access point|Activation of|controller) \x27).*/\1[REDACTED-SSID]/I}
+        s/(added \x27ssid\x27 value \x27).*\x27([[:space:]]*)$/\1[REDACTED-SSID]\x27\2/Ig
+        s/(Connected to wireless network ").*"([[:space:]]*)$/\1[REDACTED-SSID]"\2/Ig
+        s/(op="connection-[^"]*".* name=").*(" args=)/\1[REDACTED-SSID]\2/Ig
+        / args=/!s/(op="connection-[^"]*".* name=").*(" pid=)/\1[REDACTED-SSID]\2/Ig
+        s/(NetworkManager is running and profile \x27).*(\x27 does NOT pin)/\1[REDACTED-SSID]\2/Ig
+        s/(nmcli connection (modify|up|down|delete|show) \x27).*(\x27 ipv[46]\.)/\1[REDACTED-SSID]\3/Ig
+        # v1.10 (bundle 70730c): the LUKS mapper is named after the LUKS header UUID,
+        # luks-<uuid>, and that name sits in /dev/mapper paths, root=, crypttab, fstab,
+        # grub.cfg, /etc/default/grub and, hex-escaped as luks\x2d<uuid>, in systemd unit
+        # names. The uuid key rule redacted root=UUID= and cryptdevice=UUID= but not
+        # the mapper name carrying the same UUID.
+        s/luks-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/luks-[REDACTED-UUID]/Ig
+        s/luks\\x2d[0-9a-f]{8}\\x2d[0-9a-f]{4}\\x2d[0-9a-f]{4}\\x2d[0-9a-f]{4}\\x2d[0-9a-f]{12}/luks\\x2d[REDACTED-UUID]/Ig
+        # The same LUKS header UUID in its other shapes, measured in that bundle after
+        # the two rules above: GRUB cryptomount -u and its cryptouuid/ hint (grub.cfg,
+        # 20 lines), the early-retry journal line, the lsblk -f row of the LUKS
+        # partition, the dm-uuid CRYPT-LUKS id (32 hex,
+        # no dashes) and the by-uuid device links, plain or hex-escaped in unit names.
+        # A by-uuid link names any filesystem, so this also covers the UUIDs the
+        # UUID= key rule already redacts in fstab and root=.
+        s/(cryptomount (-u )?)[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}/\1[REDACTED-UUID]/Ig
+        s/(cryptouuid\/)[0-9a-f]{32}/\1[REDACTED-UUID]/Ig
+        s/(crypto_LUKS([[:space:]]+[0-9])?[[:space:]]+)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/\1[REDACTED-UUID]/Ig
+        s/(LUKS container )[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}/\1[REDACTED-UUID]/Ig
+        s/(CRYPT(-|\\x2d)LUKS[12](-|\\x2d))[0-9a-f]{32}/\1[REDACTED-UUID]/Ig
+        s/(by(-|\\x2d)uuid[-\/])[0-9a-f]{8}(-|\\x2d)[0-9a-f]{4}(-|\\x2d)[0-9a-f]{4}(-|\\x2d)[0-9a-f]{4}(-|\\x2d)[0-9a-f]{12}/\1[REDACTED-UUID]/Ig
+        # v1.11 (bundle 70730c): the systemd machine-id, a persistent identifier of the
+        # installation that systemd documents as confidential, appeared 10 times in that
+        # public bundle: in the journald storage paths and as dbus-launch --autolaunch.
+        # These rules cover those shapes (systemd-cgls may cut the id short); the final
+        # stage of this pipeline also replaces the machine-id of this box wherever it occurs.
+        s/((\/run|\/var)\/log\/journal\/)[0-9a-f]{32}/\1[REDACTED-MACHINE-ID]/Ig
+        s/(--autolaunch[= ])[0-9a-f]{6,32}/\1[REDACTED-MACHINE-ID]/Ig
+        s/(machine[-_ ]?id[[:space:]]*[:=][[:space:]]*)[0-9a-f]{32}/\1[REDACTED-MACHINE-ID]/Ig
         # v1.7 (inspector, 2026-09-06): a signed entitlement claim is a
         # credential and its keys are payload_b64 / signature_b64, which no
         # rule above matched ("signature" had to be the whole key). Any key
@@ -850,7 +1001,40 @@ redact_secrets() {
         # MAC addresses, colon form and the dash form ip/ethtool never emits
         # but Windows-exported profiles and some firmware dumps do.
         s/([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}/[REDACTED-MAC]/Ig
+        # Round 4: an NVMe EUI-64 (8 dash-separated bytes) was cut by the 6-byte MAC rule below into
+        # "[REDACTED-MAC]-90-11"; it is one identifier with its own label.
+        s/([[:xdigit:]]{2}-){7}[[:xdigit:]]{2}/[REDACTED-EUI64]/Ig
         s/([[:xdigit:]]{2}-){5}[[:xdigit:]]{2}/[REDACTED-MAC]/Ig
+        # v1.12 (bundle 05cd0a, 2026-10-19), P1: nm-applet names the network between CURLY quotes,
+        # "Wi-Fi network connection \xE2\x80\x9C<name>\xE2\x80\x9D active", and the XFCE panel stores
+        # that tooltip in xfce4-panel.xml known-legacy-items, so the Wi-Fi name reached the bundle in
+        # two files. Every rule above knows only straight quotes. The name runs to the LAST closing
+        # curly quote on the line (an SSID may contain one), so text is lost before a name is kept.
+        # Typographic quotes are handled by an awk stage after the saved-name stage (rounds 4, 5).
+        # P2: predictable interface names spell the permanent MAC in hex (wlx001122334455,
+        # enx..., wwx...), and ip addr prints one as an altname. The colon rules above never see it.
+        # Round 2 (row 5): no boundary is consumed, so two names one character apart and a name
+        # glued to an underscore (dhclient_wlx...) are both redacted.
+        s/(wlx|enx|wwx)[[:xdigit:]]{12}/\1[REDACTED-MAC]/Ig
+        # Round 2 (row 1): the underscore MAC form (bluez_output.0A_1B_2C_3D_4E_5F.1, Bluetooth
+        # node and card names) had no rule anywhere.
+        # Round 3 (item 12): bounded on both sides, or 2026_10_19_08_22_44 (a timestamp) lost
+        # its tail. Applied twice, because a match consumes the character between two MACs.
+        # Round 4 (item 1): an underscore after a NON-hex character is a separator too, so bluez
+        # /org/bluez/hci0/dev_0A_1B_2C_3D_4E_5F is matched while 2026_10_19_08_22_44 is not.
+        s/(^|[^[:xdigit:]_]|[^[:xdigit:]]_)([[:xdigit:]]{2}_){5}[[:xdigit:]]{2}([^[:xdigit:]_]|$)/\1[REDACTED-MAC]\3/Ig
+        s/(^|[^[:xdigit:]_]|[^[:xdigit:]]_)([[:xdigit:]]{2}_){5}[[:xdigit:]]{2}([^[:xdigit:]_]|$)/\1[REDACTED-MAC]\3/Ig
+        # Round 2 (row 6): efibootmgr -v prints the boot partition GUID as HD(n,GPT,<guid>,...) and a
+        # NIC as MAC(<12 hex>,n).
+        s/(HD\([0-9]+,(GPT|MBR),)(0x)?[0-9A-Fa-f-]+/\1[REDACTED-UUID]/g
+        s/(MAC\()[[:xdigit:]]{12}/\1[REDACTED-MAC]/g
+        # P3: the partition UUID identifies the disk as well as the filesystem UUID does. The uuid key
+        # rule needs a non-letter before "uuid", so PARTUUID= passed, and so did the by-partuuid
+        # device links (plain or hex-escaped in unit names) and the Calamares PartUUID$ form.
+        s/(^|[^A-Za-z0-9])((PART|PT)UUID[[:space:]]*[:=][[:space:]]*"?)[0-9a-f][0-9a-f-]*/\1\2[REDACTED-UUID]/Ig
+        s/(by(-|\\x2d)partuuid[-\/])([0-9a-f]|-|\\x2d)+/\1[REDACTED-UUID]/Ig
+        s/(PartUUID\$)[0-9a-f]+/\1[REDACTED-UUID]/Ig
+        s/"@@KDCPOSTURE@@"/"key"/g
     ' | LC_ALL=C awk '
     # ---- Network identifiers -------------------------------------------
     # Both families are SELECTIVE, for the reason recorded in the 2026-07-02
@@ -1034,7 +1218,10 @@ redact_secrets() {
                     (o[1] == 192 && o[2] == 168) || \
                     (o[1] == 172 && o[2] >= 16 && o[2] <= 31) || \
                     (o[1] == 169 && o[2] == 254) || \
-                    (o[1] == 255 && o[2] == 255))
+                    (o[1] == 255 && o[2] == 255) || \
+                    (o[1] >= 224 && o[1] <= 239))
+            # v1.12 (bundle 05cd0a): 224.0.0.0/4 is multicast (mDNS 224.0.0.251, the routing
+            # table entry 224.0.0.0/4). A group address names no machine, so it is kept.
             # audit 2026-08-19: a four-part VERSION is a valid dotted quad, so
             # the collector was redacting the fields support reads first.
             #   NIGHTLY_VERSION=9.8.4.183   ->  NIGHTLY_VERSION=[REDACTED-IPV4]
@@ -1072,6 +1259,16 @@ redact_secrets() {
             #     with "=", ":" or a quote, which is what stops "build ".
             if (tail ~ /(version|release|revision)[^0-9a-z]?[^0-9a-z]?[^0-9a-z]?$/) isver = 1
             else if (tail ~ /(build|nightly|pack|kernel|firmware|uname)[=:"'"'"']$/) isver = 1
+            # v1.12 (bundle 05cd0a), three more structural tells, each a shape an address never takes:
+            #   Xorg        "compiled for 1.20.14.0, module version = 1.0.0"
+            #   .deb name   "debsums_3.0.2.1_all.deb"  (underscore both sides, then arch and .deb)
+            #   dkms status "rtl8814au/5.8.5.1, 6.12.111+deb13-amd64, x86_64" (whole line prefix is
+            #               one module name and a slash, a comma follows)
+            else if (tail ~ /compiled for $/) isver = 1
+            else if (after == "_" && pre ~ /[A-Za-z0-9+.~-]_$/ && substr(r, RSTART + RLENGTH) ~ /^_[a-z0-9]+\.u?deb/) isver = 1
+            # Round 2 (row 3): "<word>/<IPv4>," alone also matched "tcp/203.0.113.7, peer reset";
+            # dkms prints ", <kernel release>, <arch>" after the version, so that is required too.
+            else if (after == "," && length(out) == 0 && pre ~ /^[A-Za-z0-9_.+-]+\/$/ && substr(r, RSTART + RLENGTH) ~ /^, [0-9]+\.[0-9]+[^ ,]*, (x86_64|amd64|i[3-6]86|aarch64|arm64|armv7l|riscv64|ppc64le|s390x)([:, ]|$)/) isver = 1
             # (2) a Debian revision or vendor suffix follows (0.4.8.12-1,
             #     6.12.94.1-amd64, 1.0.7.0-k), but NOT an address range,
             #     which carries a second dotted quad after the separator.
@@ -1246,7 +1443,7 @@ redact_secrets() {
         return out
     }
     function dec(str) {
-        gsub(/%20/, " ", str); gsub(/%3[Aa]/, ":", str); gsub(/%25/, "%", str)
+        gsub(/%20/, " ", str); gsub(/%09/, "\t", str); gsub(/%3[Aa]/, ":", str); gsub(/%25/, "%", str)
         return str
     }
     function load(list, kind, prefix, anch, ctx, pb,   n, i, P, F) {
@@ -1254,6 +1451,7 @@ redact_secrets() {
         KANYR[kind] = "(" ctx ")"
         KEND[kind] = "(" ctx ")$"
         KANCH[kind] = (anch == "") ? "" : "^(" anch ")$"
+        KANC[kind] = anch
         n = split(list, P, " ")
         for (i = 1; i <= n; i++) {
             if (split(P[i], F, ":") != 3 || F[1] == "" || F[3] == "") continue
@@ -1273,30 +1471,51 @@ redact_secrets() {
             TR8[m] = (kind == "U" && length(H[m]) > 8) ? substr(H[m], 1, 8) : ""
         }
     }
-    # Context test per OCCURRENCE (v1.8, inspector N5). The earlier form ran
-    # one regex per name over the whole line and cost 12 s for five short
-    # names on a 2.2 MB journal. Now a context-mode name is looked up with
-    # index() and, only where it occurs, the at most 100 characters before
-    # it are tested against ONE end-anchored regex of all contexts of that
-    # list; the line-start forms (syslog host column) are tested only for
-    # the first occurrence in the segment.
-    function ctxpass(seg, kind,   j, out, r, q, hl, t1, w, k, first) {
+    # Context test (v1.8, inspector N5; rounds 6 and 7, re-inspection items R5 and N1). A
+    # context-mode name is replaced where the at most 100 characters before it END in a context
+    # (KEND) and no word goes on after it, or, for its FIRST occurrence, where everything before it
+    # matches the list line-start form (KANC: the syslog host column, the numbered user list, the
+    # start of an nmcli line) and, when the list sets one, what follows matches KAFT.
+    # Round 7: the segment is split on the name ONCE, each hit tests only its own window, and the
+    # pieces are joined pairwise (cjoin), so the cost is linear in the segment whatever the number
+    # of hits, in every awk. Visiting hits by copying the rest of the line (round 5) or by a regex
+    # search over the rest of the line (round 6) was quadratic: mawk took 75 s for 20000
+    # "connection \x27home\x27" hits, and over 200 s for 40000 /home/<user> paths, because its regex
+    # search scans to the end of the line once per match.
+    function ctxpass(seg, kind,   j, hl, e, a, head, n, i, k, w, nx, PC, DC) {
         for (j = 1; j <= m; j++) {
             if (K[j] != kind || M[j] != "C" || index(seg, H[j]) == 0) continue
-            hl = length(H[j]); out = ""; r = seg; first = 1
-            while ((q = index(r, H[j])) > 0) {
-                t1 = substr(r, 1, q - 1)
-                if (length(t1) >= 100) w = substr(t1, length(t1) - 99)
-                else { k = length(out) - (100 - length(t1)); w = (k > 0 ? substr(out, k + 1) : out) t1 }
-                if (!contd(r, q + hl) && (match(w, KEND[kind]) || (first && KANCH[kind] != "" && match(t1, KANCH[kind]))))
-                    out = out t1 T[j]
-                else
-                    out = out t1 H[j]
-                r = substr(r, q + hl); first = 0
+            hl = length(H[j]); a = 0; head = ""
+            if (KANC[kind] != "" && match(seg, "^(" KANC[kind] ")" EH[j]) && RLENGTH - hl + 1 == index(seg, H[j])) {
+                e = RLENGTH + 1
+                if (!contd(seg, e) && (KAFT[kind] == "" || substr(seg, e) ~ KAFT[kind])) a = e
             }
-            seg = out r
+            if (a) { head = substr(seg, 1, a - hl - 1) T[j]; seg = substr(seg, a) }
+            if (index(seg, H[j]) > 0 && match(seg, KANYR[kind] EH[j])) {
+                n = split(seg, PC, EH[j]); split("", DC)
+                for (i = 1; i < n; i++) {
+                    w = PC[i]; k = i - 1
+                    while (length(w) < 100 && k >= 1) { w = substr(PC[k], length(PC[k]) > 100 ? length(PC[k]) - 99 : 1) DC[k] w; k-- }
+                    if (length(w) > 100) w = substr(w, length(w) - 99)
+                    nx = PC[i + 1]; if (i + 1 < n && length(nx) < 2) nx = nx H[j]
+                    DC[i] = (match(w, KEND[kind]) && !contd(nx, 1)) ? T[j] : H[j]
+                }
+                seg = cjoin(PC, DC, n)
+            }
+            seg = head seg
         }
         return seg
+    }
+    # PC[1] DC[1] PC[2] ... PC[n], joined pairwise so no string is re-copied more than log2(n) times.
+    function cjoin(PC, DC, n,   Q, i, k, c) {
+        for (i = 1; i < n; i++) Q[i] = PC[i] DC[i]
+        Q[n] = PC[n]; c = n
+        while (c > 1) {
+            k = 0
+            for (i = 1; i <= c; i += 2) { k++; Q[k] = (i < c) ? Q[i] Q[i + 1] : Q[i] }
+            c = k
+        }
+        return Q[1]
     }
     # PREFIX NAME SUFFIX literal forms that are only an account name because
     # of what follows it: "by NAME(uid=1000)", "User NAME authorized",
@@ -1345,6 +1564,7 @@ redact_secrets() {
         if (HASC["H"] && hasc(seg, "H")) seg = ctxpass(seg, "H")
         if (HASC["U"] && hasc(seg, "U")) seg = ctxpass(seg, "U")
         if (HASC["F"] && hasc(seg, "F")) seg = ctxpass(seg, "F")
+        if (HASC["S"] && hasc(seg, "S")) seg = ctxpass(seg, "S")
         return seg
     }
     # v1.8 (inspector N7): location data. The installer records the chosen
@@ -1422,6 +1642,21 @@ redact_secrets() {
         load(ENVIRON["KDC_REDACT_HOSTNAMES"], "H", "HOSTNAME", HANCH, HCTX, "[A-Za-z0-9]")
         load(ENVIRON["KDC_REDACT_USERS"], "U", "USER", "^[ \t]*[0-9]+ - ", UCTX, "[A-Za-z0-9_]")
         load(ENVIRON["KDC_REDACT_FULLNAMES"], "F", "FULLNAME", "", FCTX, "[A-Za-z0-9]")
+        # v1.12 round 3: the machine own network names (kdc_build_ssid_list). Round 5 (step-0
+        # re-inspection item 1): a name that is an ordinary lowercase word comes in CONTEXT mode and
+        # is replaced only where the text marks it as a network name.
+        # Round 6 (re-inspection items R3, R4): a quote alone is not such a mark (it took JSON keys
+        # and values: "dst":"default", "mode":"default"), and a line START alone is not either (a
+        # network named "default" took every "default via" route). The marks are: SSID= SSID: and
+        # SSID \x27 or \x22 (wpa_supplicant, iwd), keyfile id=, Network: and Network name:, the keyfile
+        # and iwd paths, a quote after connection, network, Wi-Fi or WLAN (NetworkManager and the
+        # nm-applet languages that quote with ASCII), a JSON ssid, id, connection or network key, an
+        # XML-escaped quote (the panel stores nm-applet tooltips as &quot; and &apos;), and the start
+        # of an nmcli line, which must go on with ":" (nmcli -t) or two spaces and a UUID (KAFT).
+        SCTX = "[Ss][Ss][Ii][Dd][ \t]*[=:][ \t]*[\x27\"]?|[Ss][Ss][Ii][Dd][ \t]+[\x27\"]|(^|[^A-Za-z0-9_])id=[\x27\"]?|[Nn]etwork( [Nn]ame)?:[ \t]*|system-connections/|/var/lib/iwd/|([Cc]onnection|[Nn]etwork|[Ww][Ii]-?[Ff][Ii]|WLAN)[ \t]+[\x27\"]|\\\\?\"([Ss][Ss][Ii][Dd]|id|connection|network)\\\\?\"[ \t]*:[ \t]*\\\\?\"|&quot;|&apos;|&#39;"
+        load(ENVIRON["KDC_REDACT_SSIDS"], "S", "SSID", "[ \t]*", SCTX, "[A-Za-z0-9]")
+        hx8 = ""; for (i = 0; i < 8; i++) hx8 = hx8 "[0-9a-fA-F]"
+        KAFT["S"] = "^(:|[ \t][ \t]+" hx8 "-)"
         # Longest first across all lists (insertion sort, m is small).
         for (i = 2; i <= m; i++) {
             for (j = i; j > 1 && length(H[j]) > length(H[j - 1]); j--) {
@@ -1435,6 +1670,8 @@ redact_secrets() {
                 t = TR8[j]; TR8[j] = TR8[j - 1]; TR8[j - 1] = t
             }
         }
+        # Regex-escaped names, after the sort (ctxpass).
+        for (i = 1; i <= m; i++) EH[i] = esc_re(H[i])
         # debconf records (questions.dat / templates.dat) whose values are
         # personal or location data, and the token each value becomes.
         DC["passwd/user-fullname"] = "[REDACTED-FULLNAME]"
@@ -1495,8 +1732,123 @@ redact_secrets() {
             }
         }
         print line
+    }' | LC_ALL=C awk '
+    # ---- Typographic quotes (v1.12 round 4, step-0 inspector item 9; rounds 5 and 6) ---------
+    # Text between typographic quotes is redacted with a NEUTRAL label: network names (nm-applet
+    # quotes them in seven styles across its catalogs) and also URIs and paths, which GLib and GIO
+    # quote the same way. An opener is paired with the FIRST closer of its own style; an opener
+    # with no closer on the line is redacted to the end of the line. Styles: low-9 with either
+    # curly close, double curly, two closing curly quotes (sv), guillemets, single curly, CJK
+    # corner brackets. This stage runs AFTER the saved-name stage, so a saved name holding a
+    # quote character ("The Smiths’ Net") is replaced whole before any pairing. A right single
+    # quote followed by a letter is an apostrophe (it’s, Anna’s), never a closer.
+    # Round 6 (step-0 re-inspection of round 5, items R1, R2, R6): every pass pairs on RESERVED
+    # SINGLE BYTES. The style opener becomes \004 and its closer(s) \003 (and \005), so a body is
+    # [^\003]* and nothing but the closer can stop it: a multi-byte "not the closer" body was
+    # blocked by the other low-9 closer or by an invalid lead byte, and each opener then rescanned
+    # to that blocker (34 s for 100 KB in mawk). Only the text up to the style last closer is
+    # searched, so trailing unclosed openers never rescan. Guillemets point both ways (fr out, de
+    # and sl in) and also serve as separators (Menu » Network), so everything from the first to
+    # the last guillemet on the line is redacted: pairing one direction leaked the text the other
+    # direction encloses. A pair becomes \001 n \002 until every style is done; original \001,
+    # \003, \004 and \005 bytes are escaped first and restored last.
+    function pairpass(line, k, opener, pat, last,   e, head) {
+        if (index(line, opener) == 0 || !match(line, last)) return line
+        e = RSTART
+        head = substr(line, 1, e)
+        gsub(pat, "\001" k "\002", head)
+        return head substr(line, e + 1)
+    }
+    BEGIN {
+        LQ = "\342\200\234"; RQ = "\342\200\235"; LO = "\342\200\236"; GL = "\302\253"; GR = "\302\273"
+        SL = "\342\200\230"; SR = "\342\200\231"; CL = "\343\200\214"; CR = "\343\200\215"
+        APOS = SR "[A-Za-z]"
+        RQT = "[REDACTED-QUOTED]"
+        # restore forms of the placeholders, by pass
+        PO[1] = LO; PC[1] = LQ; PO[2] = LQ; PC[2] = RQ; PO[3] = RQ; PC[3] = RQ
+        PO[4] = GL; PC[4] = GR; PO[5] = SL; PC[5] = SR; PO[6] = CL; PC[6] = CR
+        n1 = split(LO " " LQ " " RQ " " GL " " GR " " SL " " CL, OPN, " ")
+    }
+    {
+        if (index($0, "\342") == 0 && index($0, "\302") == 0 && index($0, "\343") == 0) { print; next }
+        line = $0
+        if (index(line, "\001") > 0) gsub("\001", "\001E\002", line)
+        if (index(line, "\003") > 0) gsub("\003", "\001F\002", line)
+        if (index(line, "\004") > 0) gsub("\004", "\001G\002", line)
+        if (index(line, "\005") > 0) gsub("\005", "\001H\002", line)
+        if (index(line, SR) > 0) { gsub(APOS, "\001A&", line); gsub("\001A" SR, "\001A\002", line) }
+        # 1. low-9 opener with either curly close (de, cs, ...): one pass, the closer kind is not kept,
+        #    and the pair ends at the last curly close before the next low-9 opener (round 7)
+        if (index(line, LO) > 0) {
+            gsub(LQ, "\003", line); gsub(RQ, "\005", line); gsub(LO, "\004", line)
+            # Round 7 (re-inspection item N5): a body runs to the LAST closer before the next low-9
+            # opener, so English quotes nested inside („a “b” c“) stay inside the pair.
+            line = pairpass(line, 1, "\004", "\004[^\004]*[\003\005]", "[\003\005][^\003\005]*$")
+            gsub("\004", LO, line); gsub("\003", LQ, line); gsub("\005", RQ, line)
+        }
+        # 2. double curly
+        if (index(line, LQ) > 0) {
+            gsub(RQ, "\003", line); gsub(LQ, "\004", line)
+            line = pairpass(line, 2, "\004", "\004[^\003]*\003", "\003[^\003]*$")
+            gsub("\004", LQ, line); gsub("\003", RQ, line)
+        }
+        # 3. two closing curly quotes (sv)
+        if (index(line, RQ) > 0) {
+            gsub(RQ, "\003", line)
+            line = pairpass(line, 3, "\003", "\003[^\003]*\003", "\003[^\003]*$")
+            gsub("\003", RQ, line)
+        }
+        # 4. guillemets, either direction: first to last
+        if (index(line, GL) > 0 || index(line, GR) > 0) {
+            gsub(GL, "\003", line); gsub(GR, "\005", line)
+            if (match(line, "[\003\005].*[\003\005]")) line = substr(line, 1, RSTART - 1) "\0014\002" substr(line, RSTART + RLENGTH)
+            gsub("\003", GL, line); gsub("\005", GR, line)
+        }
+        # 5. single curly (apostrophes already set aside)
+        if (index(line, SL) > 0) {
+            gsub(SR, "\003", line); gsub(SL, "\004", line)
+            line = pairpass(line, 5, "\004", "\004[^\003]*\003", "\003[^\003]*$")
+            gsub("\004", SL, line); gsub("\003", SR, line)
+        }
+        # 6. CJK corner brackets
+        if (index(line, CL) > 0) {
+            gsub(CR, "\003", line); gsub(CL, "\004", line)
+            line = pairpass(line, 6, "\004", "\004[^\003]*\003", "\003[^\003]*$")
+            gsub("\004", CL, line); gsub("\003", CR, line)
+        }
+        # an opener left with no closer: redact from it to the end of the line
+        bp = 0
+        for (k = 1; k <= n1; k++) { p = index(line, OPN[k]); if (p > 0 && (bp == 0 || p < bp)) { bp = p; ol = length(OPN[k]) } }
+        if (bp > 0) line = substr(line, 1, bp + ol - 1) RQT
+        for (k = 1; k <= 6; k++) if (index(line, "\001" k "\002") > 0) gsub("\001" k "\002", PO[k] RQT PC[k], line)
+        if (index(line, "\001A\002") > 0) gsub("\001A\002", SR, line)
+        if (index(line, "\001H\002") > 0) gsub("\001H\002", "\005", line)
+        if (index(line, "\001G\002") > 0) gsub("\001G\002", "\004", line)
+        if (index(line, "\001F\002") > 0) gsub("\001F\002", "\003", line)
+        if (index(line, "\001E\002") > 0) gsub("\001E\002", "\001", line)
+        print line
+    }' | LC_ALL=C awk '
+    # v1.11: replace the machine-id of this box (KDC_MACHINE_ID, read once per run from
+    # /etc/machine-id) wherever it occurs, whatever the context. index() is a literal
+    # match, so no character of the id is read as a pattern.
+    BEGIN { mid = ENVIRON["KDC_MACHINE_ID"] }
+    {
+        if (mid != "") {
+            line = $0; out = ""
+            while ((i = index(line, mid)) > 0) {
+                out = out substr(line, 1, i - 1) "[REDACTED-MACHINE-ID]"
+                line = substr(line, i + length(mid))
+            }
+            print out line
+        } else print
     }'
 }
+
+# v1.11: the machine-id of this box for the final redaction stage; empty (stage is a no-op)
+# when /etc/machine-id is missing or not 32 hex characters.
+KDC_MACHINE_ID=$(tr -dc '0-9a-f' < /etc/machine-id 2>/dev/null | head -c 32)
+[[ ${#KDC_MACHINE_ID} -eq 32 ]] || KDC_MACHINE_ID=""
+export KDC_MACHINE_ID
 
 # v1.8: normalise one hostname candidate. A domain suffix is removed only
 # when the text after the first dot starts with a letter (host.local,
@@ -1761,6 +2113,104 @@ kdc_build_fullname_list() {
 }
 KDC_REDACT_FULLNAMES=$(kdc_build_fullname_list)
 export KDC_REDACT_FULLNAMES
+
+# v1.12 round 3 (step-0 inspector item 1): the network NAMES themselves. Every quote rule is a guess
+# about wording, and nm-applet alone quotes the name in at least seven styles across its 37 catalogs
+# (German and Slovenian with guillemets pointing inwards, Swedish with two closing quotes, Dutch with
+# single curly quotes, Chinese with corner brackets, and plain ASCII quotes in pt, id, be, gd, kk, is
+# and ja): 53 of 185 translated lines kept the name. The names a machine knows are listed here (the
+# ssid= and id= lines of NetworkManager's saved connections, nmcli's connection names and iwd's
+# network files) and replaced wherever they occur, on word boundaries, like the hostnames above.
+# Names shorter than 4 characters, interface names and NetworkManager's generic "Wired connection N"
+# are not listed: they identify no one and appear in every diagnostic line.
+# Round 4 (step-0 inspector items 4, 5, 6, 8): the core reads "<source><TAB><name>" lines on stdin,
+# K = NetworkManager keyfile value (GKeyFile escapes \s \t \n \\ \;), N = nmcli -t name (escapes \:
+# and \\), R = a raw name, or an iwd file name, where "=<hex>" is the hex of the name. It skips the
+# live interface names, interface-SHAPED names, names under 4 characters and NetworkManager's
+# generic "Wired connection N". Tab is encoded as %09.
+# Round 5 (step-0 re-inspection items 1, 3, 8):
+#  - an ordinary word is no longer dropped (dropping it left the name in the bundle). A name that is
+#    all lowercase letters and a lowercase word of the built-in list or /usr/share/dict/words
+#    ("home", "default") is listed in CONTEXT mode (C), replaced only where the text marks it as a
+#    network name (SCTX in redact_secrets), because in word mode "home" or "default" would destroy
+#    every /home/ path and "default via" route. Only the dictionary LOWERCASE entries count, so a
+#    capitalized name ("Maria", which the dictionary lists as a proper noun) stays in word mode,
+#    where the match is case-sensitive and cannot touch a lowercase path;
+#  - an interface shape needs a digit right after its type letters (enp0s3, eno1, wlo1, wwp0s20u4,
+#    wlan0) or exactly 12 hex digits after enx/wlx/wwx, so "enspire5g", "envoy24", "wloffice" and
+#    "wwsales1" are network names;
+#  - the counts go to $KDC_SSID_SKIPPED_FILE as "shape=N context=N" (never a name).
+kdc_build_ssid_list_from() {
+    local dict=""
+    [[ -r /usr/share/dict/words ]] && dict=/usr/share/dict/words
+    LC_ALL=C awk -F '\t' -v ifs="$(ls /sys/class/net 2>/dev/null | tr '\n' ' ')" -v dict="$dict" \
+        -v skipped_file="${KDC_SSID_SKIPPED_FILE:-}" '
+        BEGIN {
+            n = split(ifs, IFN, " "); for (i = 1; i <= n; i++) skip[IFN[i]] = 1
+            n = split("home default local office guest public private wifi wireless network internet router modem free open hotspot android iphone mobile phone test kodachi debian ubuntu linux user root admin family house work school library cafe coffee hotel airport setup none null unknown true false auto main mesh wired ethernet connection vpn lan wan", CW, " ")
+            for (i = 1; i <= n; i++) common[CW[i]] = 1
+            if (dict != "") while ((getline w < dict) > 0) if (w ~ /^[a-z]+$/) common[w] = 1
+            for (i = 0; i < 16; i++) HX[substr("0123456789abcdef", i + 1, 1)] = i
+            hx12 = ""; for (i = 0; i < 12; i++) hx12 = hx12 "[0-9a-fA-F]"
+            SHAPE = "^(lo|eth[0-9]+|en[opsvP][0-9][0-9a-z]*|(enx|wlx|wwx)" hx12 "|wlan[0-9]+|wl[opsvP][0-9][0-9a-z]*|ww[opsvP][0-9][0-9a-z]*|wwan[0-9]+|docker[0-9]+|virbr[0-9]+|veth[0-9a-f]+|tun[0-9]+|tap[0-9]+|wg[0-9]+)$"
+            nshape = 0; nctx = 0
+        }
+        function enc(str) { gsub(/%/, "%25", str); gsub(/ /, "%20", str); gsub(/\t/, "%09", str); gsub(/:/, "%3A", str); return str }
+        function unesc(v, kind,   out, i, c, d) {
+            out = ""
+            for (i = 1; i <= length(v); i++) {
+                c = substr(v, i, 1)
+                if (c != "\\" || i == length(v)) { out = out c; continue }
+                d = substr(v, ++i, 1)
+                if (kind == "K") out = out (d == "s" ? " " : d == "t" ? "\t" : d == "n" ? "\n" : d)
+                else out = out d
+            }
+            return out
+        }
+        function unhex(h,   out, i) {
+            out = ""; h = tolower(h)
+            for (i = 1; i < length(h); i += 2) out = out sprintf("%c", HX[substr(h, i, 1)] * 16 + HX[substr(h, i + 1, 1)])
+            return out
+        }
+        {
+            kind = $1; v = substr($0, length($1) + 2); sub(/\r$/, "", v)
+            if (kind == "K" || kind == "N") v = unesc(v, kind)
+            else if (v ~ /^=([0-9a-fA-F][0-9a-fA-F])+$/) v = unhex(substr(v, 2))
+            if (length(v) < 4 || (v in skip)) next
+            if (v ~ /^(Wired|Ethernet) connection( [0-9]+)?$/) next
+            if (v ~ SHAPE) { nshape++; next }
+            if (seen[v]++) next
+            L[++k] = v
+            MD[v] = (v ~ /^[a-z]+$/ && (v in common)) ? "C" : "W"
+            if (MD[v] == "C") nctx++
+        }
+        END {
+            if (skipped_file != "") printf "shape=%d context=%d\n", nshape, nctx > skipped_file
+            for (i = 2; i <= k; i++)
+                for (j = i; j > 1 && length(L[j]) > length(L[j - 1]); j--) { t = L[j]; L[j] = L[j - 1]; L[j - 1] = t }
+            out = ""
+            for (i = 1; i <= k; i++) out = out (i > 1 ? " " : "") i ":" MD[L[i]] ":" enc(L[i])
+            printf "%s", out
+        }'
+}
+kdc_build_ssid_list() {
+    local f n
+    {
+        for f in /etc/NetworkManager/system-connections/*; do
+            [[ -f "$f" && -r "$f" ]] || continue
+            sed -n -e 's/^ssid=/K\t/p' -e 's/^id=/K\t/p' "$f" 2>/dev/null
+        done
+        kdc_src "ssid list: nmcli connection names" 15 nmcli -t -f NAME connection show | sed 's/^/N\t/'
+        for f in /var/lib/iwd/*.psk /var/lib/iwd/*.open /var/lib/iwd/*.8021x; do
+            [[ -e "$f" ]] || continue
+            n="${f##*/}"; printf 'R\t%s\n' "${n%.*}"
+        done
+    } | kdc_build_ssid_list_from
+}
+KDC_SSID_SKIPPED_FILE="${TEMP_DIR}/.ssid-skipped"
+export KDC_SSID_SKIPPED_FILE
+KDC_REDACT_SSIDS=$(kdc_build_ssid_list)
+export KDC_REDACT_SSIDS
 
 # Copy a file into the bundle THROUGH redact_secrets, preserving an optional
 # relative sub-path. Truncates oversized files (still redacted).
@@ -2607,6 +3057,20 @@ else
 fi
 echo ""
 
+# System logging state. v1.11 (bundle 70730c, 2026-10-15): that user had run Kodachi's
+# "Disable system logs" 41 minutes before collecting, so the journal and syslog in the bundle
+# simply stop at that moment. Without this block a reviewer reads the silence as "nothing
+# happened". Kodachi's disable masks systemd-journald and writes the 90-kodachi-logs-disabled
+# drop-ins; the manager drop-in's mtime is when it was switched off.
+echo "System Logging:"
+JOURNALD_LOAD=$(systemctl show -p LoadState --value systemd-journald.service 2>/dev/null || echo unknown)
+echo "  systemd-journald: load=${JOURNALD_LOAD:-unknown} active=$(kdc_unit_state is-active systemd-journald.service)"
+echo "  rsyslog: active=$(kdc_unit_state is-active rsyslog.service) syslog.socket=$(kdc_unit_state is-active syslog.socket)"
+echo "  manager LogTarget: $(systemctl show -p LogTarget --value 2>/dev/null || echo unknown)"
+# v1.12 (bundle 05cd0a): the drop-in alone missed a journald masked by an older health-control.
+echo "  System logs: $(kdc_logs_state)"
+echo ""
+
 # RAM and storage summary
 echo "Quick Resource Summary:"
 echo "  RAM: $(free -h 2>/dev/null | awk '/Mem:/{print $2 " total, " $3 " used, " $7 " available"}')"
@@ -2628,7 +3092,12 @@ echo "  Nuke Status:        ${NUKE_STATUS}"
 echo "  Root Filesystem:    ${ROOT_FS} (${ROOT_SOURCE})"
 echo "  Boot Mode:          $(if [[ -d /sys/firmware/efi ]]; then echo 'UEFI'; else echo 'Legacy BIOS'; fi)"
 # tor@default.service is the real daemon; tor.service is the /bin/true master.
-echo "  Tor Running:        $(systemctl is-active tor@default.service 2>/dev/null || echo 'unknown')"
+# v1.11 (bundle 70730c): torrify STOPS tor@default on purpose and routes through the Kodachi
+# Tor pool, plain tor processes reading /etc/tor/kodachi_tor_data/kodachi_tor_inst_N/torrc. That
+# bundle's box said "Tor Running: inactive" while nine pool instances were up. Both are shown.
+TOR_POOL_UP=$(pgrep -fc 'kodachi_tor_data/kodachi_tor_inst_' 2>/dev/null || true)
+echo "  Tor Running:        tor@default $(kdc_unit_state is-active tor@default.service), Kodachi Tor pool instances running: ${TOR_POOL_UP:-0}"
+echo "  System Logs:        $(kdc_logs_state)"
 VPN_LABEL="NO"; [[ -n "${VPN_IFACES:-}" ]] && VPN_LABEL="YES"
 echo "  VPN Active:         ${VPN_LABEL}"
 echo "  DNSCrypt:           $(if pgrep -x dnscrypt-proxy &>/dev/null; then echo 'RUNNING'; else echo 'NOT RUNNING'; fi)"
@@ -2747,9 +3216,9 @@ safe_exec "$COLLECTION_DIR/01-system-boot/kernel-taint.txt" "cat /proc/sys/kerne
 # manifest "this morning" / "after a few reboots". Without these we can't
 # correlate the slow boot to anything that changed across boots.
 safe_exec "$COLLECTION_DIR/01-system-boot/journalctl-prev-boot.txt" \
-    "journalctl -b -1 --no-pager"
+    "journalctl -b -1 --no-pager || echo '(no previous boot in the journal: the journal is not persistent, or System Logs are off)'"
 safe_exec "$COLLECTION_DIR/01-system-boot/journalctl-prev-boot-errors.txt" \
-    "journalctl -b -1 -p err --no-pager"
+    "journalctl -b -1 -p err --no-pager || echo '(no previous boot in the journal: the journal is not persistent, or System Logs are off)'"
 safe_exec "$COLLECTION_DIR/01-system-boot/journalctl-list-boots.txt" \
     "journalctl --list-boots --no-pager"
 safe_exec "$COLLECTION_DIR/01-system-boot/systemd-analyze-plot.svg" \
@@ -2824,11 +3293,11 @@ safe_exec "$COLLECTION_DIR/02-hardware-drivers/df.txt" "df -h"
 # Wireless kill switches
 safe_exec "$COLLECTION_DIR/02-hardware-drivers/rfkill.txt" "rfkill list all"
 # Firmware messages
-safe_exec "$COLLECTION_DIR/02-hardware-drivers/dmesg-firmware.txt" "dmesg | grep -i firmware"
+safe_exec "$COLLECTION_DIR/02-hardware-drivers/dmesg-firmware.txt" "dmesg | grep -i firmware || echo '(no firmware lines in dmesg; grep exit 1 means no match, not a failure)'"
 # Error messages
-safe_exec "$COLLECTION_DIR/02-hardware-drivers/dmesg-errors.txt" "dmesg | grep -i error"
+safe_exec "$COLLECTION_DIR/02-hardware-drivers/dmesg-errors.txt" "dmesg | grep -i error || echo '(no error lines in dmesg; grep exit 1 means no match, not a failure)'"
 # GPU model only (VGA/3D/display controllers)
-safe_exec "$COLLECTION_DIR/02-hardware-drivers/gpu-info.txt" "lspci | grep -iE 'vga|3d|display'"
+safe_exec "$COLLECTION_DIR/02-hardware-drivers/gpu-info.txt" "lspci | grep -iE 'vga|3d|display' || echo '(lspci lists no VGA, 3D or display controller)'"
 # SSD vs HDD detection (ROTA=0 means SSD, ROTA=1 means HDD)
 safe_exec "$COLLECTION_DIR/02-hardware-drivers/disk-type.txt" "lsblk -d -o NAME,SIZE,ROTA,TRAN,TYPE"
 # System brand/model only, no serial numbers, no UUIDs, no asset tags
@@ -2836,7 +3305,7 @@ safe_exec "$COLLECTION_DIR/02-hardware-drivers/dmidecode-system.txt" "dmidecode 
 
 # Sensors if available
 if command -v sensors &> /dev/null; then
-    safe_exec "$COLLECTION_DIR/02-hardware-drivers/sensors.txt" "sensors"
+    safe_exec "$COLLECTION_DIR/02-hardware-drivers/sensors.txt" "sensors || echo '(lm-sensors found no sensor: normal in a VM or before sensors-detect)'"
 fi
 
 # Modprobe configs (blacklists, driver options)
@@ -2936,7 +3405,11 @@ safe_exec "$COLLECTION_DIR/03-network/nm-dispatcher-scripts.txt" "ls -la /etc/Ne
 # NetworkManager
 if command -v nmcli &> /dev/null; then
     safe_exec "$COLLECTION_DIR/03-network/nmcli-general.txt" "nmcli general status"
-    safe_exec "$COLLECTION_DIR/03-network/nmcli-connections.txt" "nmcli connection show"
+    # v1.10 (bundle 70730c): the NAME column of a Wi-Fi profile is the SSID and no
+    # line-based rule can tell it from any other name in a table, so the table is
+    # collected without it. UUID, TYPE, DEVICE and ACTIVE still tie each profile to
+    # the journal lines, whose own names are redacted.
+    safe_exec "$COLLECTION_DIR/03-network/nmcli-connections.txt" "nmcli -f UUID,TYPE,DEVICE,ACTIVE,AUTOCONNECT connection show"
 fi
 
 # Copy NetworkManager configs (redact WiFi passwords and sensitive credentials)
@@ -2963,7 +3436,10 @@ if [[ -d "/etc/NetworkManager" ]]; then
             # NM-specific narrow pass THEN the general redactor, which also
             # covers WireGuard-in-NM private-key=/preshared-key=, inline PEM
             # and credential URIs the narrow sed missed.
-            sed -E 's/(psk=).*/\1[REDACTED]/g; s/(password=).*/\1[REDACTED]/g; s/(secret=).*/\1[REDACTED]/g; s/(wep-key[0-9]*=).*/\1[REDACTED]/g; s/(leap-password=).*/\1[REDACTED]/g; s/(pin=).*/\1[REDACTED]/g; s/(private-key-password=).*/\1[REDACTED]/g' \
+            # v1.10 (bundle 70730c): id= is the profile name, which NetworkManager sets to
+            # the SSID for a Wi-Fi network; the comment above said it was redacted and the
+            # bundle shipped id=<home network> in clear.
+            sed -E 's/^(id=).*/\1[REDACTED-SSID]/; s/(psk=).*/\1[REDACTED]/g; s/(password=).*/\1[REDACTED]/g; s/(secret=).*/\1[REDACTED]/g; s/(wep-key[0-9]*=).*/\1[REDACTED]/g; s/(leap-password=).*/\1[REDACTED]/g; s/(pin=).*/\1[REDACTED]/g; s/(private-key-password=).*/\1[REDACTED]/g' \
                 "$nm_file" 2>/dev/null | redact_bounded > "$dest_file" 2>/dev/null || true
         else
             cp "$nm_file" "$dest_file" 2>/dev/null || true
@@ -3180,6 +3656,12 @@ for hooks_pattern in "${KODACHI_HOOKS_DIRS[@]}"; do
                             continue
                             ;;
                     esac
+                    # v1.10 (bundle 70730c): the detached signature files (60 in that bundle)
+                    # are collected as a listing with sizes and hashes below, which is what a
+                    # diagnosis compares; the files themselves add nothing.
+                    case "$rfile" in
+                        "$hooks_dir"/results/signatures/*) continue ;;
+                    esac
                     # Determine relative path and recreate structure.
                     # EVERY result file is copied through redact_secrets -
                     # the previous code left non-configs/ files and all
@@ -3188,6 +3670,15 @@ for hooks_pattern in "${KODACHI_HOOKS_DIRS[@]}"; do
                     rrel="${rfile#"$hooks_dir"/results/}"
                     safe_copy_redacted "$rfile" "$COLLECTION_DIR/06-kodachi/hooks-results" "$rrel"
                 done
+                if [[ -d "$hooks_dir/results/signatures" ]]; then
+                    {
+                        echo "# results/signatures, not collected: sha256, size in bytes, name"
+                        find "$hooks_dir/results/signatures" -type f 2>/dev/null | sort | while read -r sigf; do
+                            printf '%s  %s  %s\n' "$(sha256sum < "$sigf" 2>/dev/null | cut -c1-64)" \
+                                "$(stat -c %s "$sigf" 2>/dev/null)" "${sigf#"$hooks_dir"/results/signatures/}"
+                        done
+                    } > "$COLLECTION_DIR/06-kodachi/hooks-results/signatures-listing.txt" 2>/dev/null
+                fi
             fi
         fi
     done
@@ -3365,7 +3856,11 @@ for hooks_pattern in "/opt/kodachi/dashboard/hooks" "${REAL_HOME}/dashboard/hook
             # cache/ip-fetch/ips/<ip>.json is one geolocation record per
             # address the machine has had (city, coordinates, ISP); it is
             # exactly what the results loop already excludes as ip_history.
-            find "$hooks_dir/$sdir" -type f -size -2M -not -path '*/ip-fetch/ips/*' -not -name '*ip_history*' 2>/dev/null | head -200 | while read -r sfile; do
+            # v1.10 (bundle 70730c): flags/ holds the 200 country flag PNGs the panels
+            # draw, which used up this loop's whole 200-file cap and carry no diagnostic
+            # value; images are skipped so the cap goes to state files.
+            find "$hooks_dir/$sdir" -type f -size -2M -not -path '*/ip-fetch/ips/*' -not -name '*ip_history*' \
+                -not -name '*.png' -not -name '*.svg' -not -name '*.jpg' -not -name '*.gif' -not -name '*.ico' 2>/dev/null | head -200 | while read -r sfile; do
                 srel="${sfile#"$hooks_dir"/}"
                 safe_copy_redacted "$sfile" "$COLLECTION_DIR/06-kodachi/hooks-state" "$srel"
             done
@@ -3704,7 +4199,9 @@ done
 # EFI boot entries (critical for UEFI boot debugging)
 mkdir -p "$COLLECTION_DIR/07-installation-packages/efi-boot"
 if command -v efibootmgr &>/dev/null; then
-    safe_exec "$COLLECTION_DIR/07-installation-packages/efi-boot/efibootmgr.txt" "efibootmgr -v"
+    # v1.12 (05cd0a class sweep, measured on VM .140): on a legacy-BIOS boot efibootmgr exits 2 with
+    # "EFI variables are not supported", which TRIAGE listed as a failed probe.
+    safe_exec "$COLLECTION_DIR/07-installation-packages/efi-boot/efibootmgr.txt" "if [ -d /sys/firmware/efi ]; then efibootmgr -v; else echo 'legacy BIOS boot: no EFI variables to list'; fi"
 fi
 if [[ -d "/boot/efi" ]]; then
     safe_exec "$COLLECTION_DIR/07-installation-packages/efi-boot/efi-contents.txt" "find /boot/efi -type f"
@@ -3782,7 +4279,11 @@ for dm_dir in "/var/log/lightdm" "/var/log/sddm" "/var/log/gdm3"; do
 done
 
 # Basic display info
-safe_exec "$COLLECTION_DIR/08-display-desktop/xrandr.txt" "xrandr --verbose"
+# v1.12 (measured on VM .140): run as root, xrandr has no access to the desktop X server and the
+# file only ever said "Can't open display". It runs in the desktop user's session now.
+# Round 2 (step-0 inspector row 2): --verbose prints each monitor's EDID, whose serial descriptor
+# identifies the monitor; --query gives the outputs, modes and geometry without it.
+safe_exec_user "$COLLECTION_DIR/08-display-desktop/xrandr.txt" "xrandr --query"
 safe_exec "$COLLECTION_DIR/08-display-desktop/session-type.txt" "echo \${XDG_SESSION_TYPE:-not_set}"
 safe_exec "$COLLECTION_DIR/08-display-desktop/desktop-session.txt" "echo \${DESKTOP_SESSION:-not_set}"
 
@@ -3802,6 +4303,13 @@ safe_exec_user "$COLLECTION_DIR/08-display-desktop/user-session/systemctl-user-f
     "systemctl --user --failed --no-pager"
 safe_exec_user "$COLLECTION_DIR/08-display-desktop/user-session/systemctl-user-timers.txt" \
     "systemctl --user list-timers --all --no-pager"
+# v1.12 (bundle 05cd0a, 2026-10-19): "disable microphone" failed with "1 of 2 current non-monitor
+# desktop microphone sources did not hold mute=yes" and the bundle had NO audio inventory, so what
+# that source was could not be read. The desktop session's sources with their CLASS and mute state
+# only: the Name and description lines are dropped (hardware and user text, a Bluetooth headset
+# carries its owner's name), the class properties are fixed PipeWire vocabulary.
+safe_exec_user "$COLLECTION_DIR/08-display-desktop/user-session/audio-sources.txt" \
+    "pactl list sources 2>&1 | grep -E '^Source #|^[[:space:]]+(State|Mute|Driver|Active Port):|^[[:space:]]+(media[.]class|device[.]api|device[.]class|factory[.]name|node[.]virtual|device[.]bus|api[.]alsa[.]pcm[.]stream) = ' || echo '(pactl lists no source in the desktop session, or pactl is not installed)'"
 substep "user journal, XFCE config, autostart entries"
 safe_exec_user "$COLLECTION_DIR/08-display-desktop/user-session/journalctl-user-current-boot.txt" \
     "journalctl --user -b --no-pager"
@@ -4328,7 +4836,7 @@ safe_exec "$COLLECTION_DIR/10-security-permissions/w.txt" "PROCPS_USERLEN=32 w"
 safe_exec "$COLLECTION_DIR/10-security-permissions/last.txt" "if command -v last >/dev/null 2>&1; then last -w -20 2>/dev/null || last -20; elif command -v wtmpdb >/dev/null 2>&1; then wtmpdb last 2>/dev/null | head -20; else echo 'last/wtmpdb unavailable (no wtmp login history on this system)'; fi"
 
 # SELinux/AppArmor
-safe_exec "$COLLECTION_DIR/10-security-permissions/getenforce.txt" "getenforce"
+safe_exec "$COLLECTION_DIR/10-security-permissions/getenforce.txt" "if command -v getenforce >/dev/null 2>&1; then getenforce; else echo 'getenforce not installed (no SELinux userland; Kodachi uses AppArmor, see aa-status.txt)'; fi"
 safe_exec "$COLLECTION_DIR/10-security-permissions/aa-status.txt" "aa-status"
 
 # Kernel hardening sysctl values (critical for security scoring debug)
@@ -4435,7 +4943,7 @@ if [[ -d "/run/live" ]]; then
     echo "Running from LIVE system" > "$COLLECTION_DIR/11-live-system/live-status.txt"
     ls -lah /run/live >> "$COLLECTION_DIR/11-live-system/live-status.txt"
     # Live-specific: squashfs info and overlay details
-    safe_exec "$COLLECTION_DIR/11-live-system/squashfs-mounts.txt" "mount | grep -E 'squash|overlay|aufs'"
+    safe_exec "$COLLECTION_DIR/11-live-system/squashfs-mounts.txt" "mount | grep -E 'squash|overlay|aufs' || echo '(no squashfs, overlay or aufs mount)'"
     if [[ -d "/run/live/medium" ]]; then
         safe_exec "$COLLECTION_DIR/11-live-system/live-medium-contents.txt" "ls -lah /run/live/medium/"
     fi
@@ -4679,6 +5187,26 @@ final_redaction_sweep() {
             echo "    (no hostname candidates found)"
         fi
         echo ""
+        echo "Network names redacted (v1.12): NetworkManager and iwd saved networks. Names are not printed."
+        echo "  mode word: replaced anywhere in text"
+        echo "  mode network-context: an ordinary lowercase word (home, default), replaced only where the"
+        echo "  text marks it as a network name: SSID=, SSID:, id=, Network:, the NetworkManager and iwd"
+        echo "  paths, a quote after SSID, connection, network, Wi-Fi or WLAN, a JSON ssid/id/connection/"
+        echo "  network key, an XML-escaped quote, and an nmcli line (name, then ':' or a UUID)"
+        if [[ -n "${KDC_REDACT_SSIDS:-}" ]]; then
+            for _se in $KDC_REDACT_SSIDS; do
+                _stok="${_se%%:*}"; _srest="${_se#*:}"; _smode="${_srest%%:*}"; _sname="${_srest#*:}"
+                _tab=$'\t'; _sname="${_sname//%20/ }"; _sname="${_sname//%09/$_tab}"; _sname="${_sname//%3A/:}"; _sname="${_sname//%25/%}"
+                printf '    SSID-%-8s %3s chars  %s\n' "$_stok" "${#_sname}" \
+                    "$([[ "$_smode" == "W" ]] && echo word || echo network-context)"
+            done
+        else
+            echo "    (no saved network names found)"
+        fi
+        _ssk=$(cat "${KDC_SSID_SKIPPED_FILE:-/dev/null}" 2>/dev/null)
+        _ssh=""; [[ "$_ssk" == *shape=* ]] && { _ssh="${_ssk#*shape=}"; _ssh="${_ssh%% *}"; }
+        echo "    interface-shaped names not listed (enp0s3, wlo1, wlx + 12 hex): ${_ssh:-0}"
+        echo ""
         echo "Account names redacted (v1.8, human accounts uid 1000-59999). Names are not printed."
         echo "  mode word: replaced anywhere in text"
         echo "  mode user-context: 4 characters or shorter, or an ordinary word, replaced only in"
@@ -4755,17 +5283,17 @@ _ph0=$(date +%s.%N)
     sed 's/^/  /' "$COLLECTION_DIR/01-system-boot/systemctl-failed.txt" 2>/dev/null | head -40 || echo "  (not collected)"
     echo ""
     echo "== Kodachi binaries missing from PATH (06-kodachi/binary-status.txt)"
-    grep -F '✗' "$COLLECTION_DIR/06-kodachi/binary-status.txt" 2>/dev/null | sed 's/^/  /' || echo "  none missing"
+    grep -aF '✗' "$COLLECTION_DIR/06-kodachi/binary-status.txt" 2>/dev/null | sed 's/^/  /' || echo "  none missing"
     echo ""
     echo "== Signature verdict (06-kodachi/integrity-check-signatures.txt)"
-    grep -oE '"(success|failed_count|missing_count|verified_count|total[a-z_]*)":[^,}]*' "$COLLECTION_DIR/06-kodachi/integrity-check-signatures.txt" 2>/dev/null | sed 's/^/  /' || echo "  (not collected)"
+    grep -aoE '"(success|failed_count|missing_count|verified_count|total[a-z_]*)":[^,}]*' "$COLLECTION_DIR/06-kodachi/integrity-check-signatures.txt" 2>/dev/null | sed 's/^/  /' || echo "  (not collected)"
     echo ""
     echo "== Missing dependencies (06-kodachi/deps-checker-check-all.txt)"
-    grep -oE '"(satisfied|with_missing|with_warnings|total_binaries)":[^,}]*' "$COLLECTION_DIR/06-kodachi/deps-checker-check-all.txt" 2>/dev/null | sed 's/^/  /'
-    tr -d '\n ' < "$COLLECTION_DIR/06-kodachi/deps-checker-check-all.txt" 2>/dev/null | grep -oE '"all_missing_packages":\[[^]]*\]' | sed 's/^/  /' || echo "  (not collected, or no missing-package list)"
+    grep -aoE '"(satisfied|with_missing|with_warnings|total_binaries)":[^,}]*' "$COLLECTION_DIR/06-kodachi/deps-checker-check-all.txt" 2>/dev/null | sed 's/^/  /'
+    tr -d '\n ' < "$COLLECTION_DIR/06-kodachi/deps-checker-check-all.txt" 2>/dev/null | grep -aoE '"all_missing_packages":\[[^]]*\]' | sed 's/^/  /' || echo "  (not collected, or no missing-package list)"
     echo ""
     echo "== Collected probes that failed, timed out, or printed nothing (count, message)"
-    grep -rhoE '^\[(EXIT CODE: [1-9][0-9]*|TIMEOUT)[^]]*\] [^:]*: .{0,110}' "$COLLECTION_DIR" --include='*.txt' 2>/dev/null \
+    grep -arhoE '^\[(EXIT CODE: [1-9][0-9]*|TIMEOUT)[^]]*\] [^:]*: .{0,110}' "$COLLECTION_DIR" --include='*.txt' 2>/dev/null \
         | sort | uniq -c | sort -rn | head -60 | sed 's/^/  /'
     echo ""
     # v1.8: unit results. systemctl status exit 3 is no longer a failed probe,
@@ -4774,14 +5302,14 @@ _ph0=$(date +%s.%N)
     _ur=0
     for sf in "$COLLECTION_DIR"/06-kodachi/units/*-show.txt; do
         [[ -f "$sf" ]] || continue
-        _res=$(grep -m1 '^Result=' "$sf" 2>/dev/null | cut -d= -f2)
-        _cond=$(grep -m1 '^ConditionResult=' "$sf" 2>/dev/null | cut -d= -f2)
-        _act=$(grep -m1 '^ActiveState=' "$sf" 2>/dev/null | cut -d= -f2)
-        _ufs=$(grep -m1 '^UnitFileState=' "$sf" 2>/dev/null | cut -d= -f2)
+        _res=$(grep -a -m1 '^Result=' "$sf" 2>/dev/null | cut -d= -f2)
+        _cond=$(grep -a -m1 '^ConditionResult=' "$sf" 2>/dev/null | cut -d= -f2)
+        _act=$(grep -a -m1 '^ActiveState=' "$sf" 2>/dev/null | cut -d= -f2)
+        _ufs=$(grep -a -m1 '^UnitFileState=' "$sf" 2>/dev/null | cut -d= -f2)
         # ConditionResult reads "no" for a unit whose conditions were never
         # evaluated (installed, never started this boot), so it only counts
         # when ConditionTimestamp says the check actually ran.
-        _ctime=$(grep -m1 '^ConditionTimestamp=' "$sf" 2>/dev/null | cut -d= -f2-)
+        _ctime=$(grep -a -m1 '^ConditionTimestamp=' "$sf" 2>/dev/null | cut -d= -f2-)
         if { [[ -n "$_res" ]] && [[ "$_res" != "success" ]]; } || [[ "$_act" == "failed" ]] || { [[ "$_cond" == "no" ]] && [[ -n "$_ctime" ]]; }; then
             printf '  %-48s Result=%-10s ConditionResult=%-4s ActiveState=%-9s UnitFileState=%s\n' \
                 "$(basename "$sf" -show.txt)" "${_res:-?}" "${_cond:-?}" "${_act:-?}" "${_ufs:-?}"
@@ -4807,9 +5335,9 @@ _ph0=$(date +%s.%N)
     fi
     _hold="$COLLECTION_DIR/07-installation-packages/apt-channels/apt-mark-showhold.txt"
     if [[ -f "$_hold" ]]; then
-        _held=$(grep -v '^\[' "$_hold" 2>/dev/null | grep -c .)
+        _held=$(grep -av '^\[' "$_hold" 2>/dev/null | grep -c .)
         if [[ "${_held:-0}" -gt 0 ]]; then
-            echo "  HELD PACKAGES ($_held): $(grep -v '^\[' "$_hold" | tr '\n' ' ' | cut -c1-200)"
+            echo "  HELD PACKAGES ($_held): $(grep -av '^\[' "$_hold" | tr '\n' ' ' | cut -c1-200)"
         else
             echo "  held packages: none"
         fi
@@ -4830,12 +5358,14 @@ _ph0=$(date +%s.%N)
     fi
     _dss="$COLLECTION_DIR/06-kodachi/dns-switch-status.txt"
     if [[ -f "$_dss" ]]; then
-        _dsrc=$(grep -m1 -oE '^\[EXIT CODE: [0-9]+\]' "$_dss" 2>/dev/null)
+        _dsrc=$(grep -a -m1 -oE '^\[EXIT CODE: [0-9]+\]' "$_dss" 2>/dev/null)
         echo "  dns-switch status: ${_dsrc:-exit 0}"
     fi
     echo ""
     echo "== Installer failures (07-installation-packages: d-i syslog and Kodachi installer logs)"
-    grep -hE 'kodachi[^ ]* returned error code|ERROR:' \
+    # Round 5 (item 7): -a, the d-i syslog carries NUL bytes and GNU grep then printed only
+    # "binary file matches" (to stderr), so every installer failure vanished from TRIAGE.
+    grep -ahE 'kodachi[^ ]* returned error code|ERROR:' \
         "$COLLECTION_DIR/07-installation-packages/debian-installer/syslog" \
         "$COLLECTION_DIR"/07-installation-packages/kodachi-logs/kodachi-di-install.log \
         "$COLLECTION_DIR"/07-installation-packages/kodachi-logs/kodachi-di-verify.log 2>/dev/null \
@@ -4843,9 +5373,12 @@ _ph0=$(date +%s.%N)
     echo ""
     echo "== Error density per collected text file, top 40 (count of error|fail|panic|denied|warn lines)"
     find "$COLLECTION_DIR" -type f \( -name '*.txt' -o -name '*.log' -o -name '*.log.*' -o -name '*.json' \) -size +0 2>/dev/null | while read -r tf; do
+        # v1.12: TRIAGE.txt is being written by this very block, so it counted itself.
+        [[ "$tf" == "$COLLECTION_DIR/00-metadata/TRIAGE.txt" ]] && continue
         # grep -c prints "0" AND exits 1 on no match, so `|| echo 0` produced
         # "0\n0" and a swallowed syntax error on every clean file.
-        c=$(LC_ALL=C grep -ciE 'error|fail|panic|denied|warn|traceback|segfault|oom-kill' "$tf" 2>/dev/null)
+        # v1.12: zero-count summaries ("failed: 0") are not problem lines (kdc_issue_lines).
+        c=$(kdc_issue_lines "$tf" | wc -l)
         c="${c%%[!0-9]*}"; [[ -n "$c" ]] || c=0
         [[ "$c" -gt 0 ]] && printf '%7d  %s\n' "$c" "${tf#"$COLLECTION_DIR"/}"
     done | sort -rn | head -40 | sed 's/^/  /'
@@ -4853,7 +5386,7 @@ _ph0=$(date +%s.%N)
     echo "== Last error/warning lines from each Kodachi hook log (06-kodachi/hooks-logs, 5 per file)"
     for hl in "$COLLECTION_DIR"/06-kodachi/hooks-logs/*.log; do
         [[ -f "$hl" ]] || continue
-        m=$(LC_ALL=C grep -iE 'error|warn|panic|fail' "$hl" 2>/dev/null | tail -5)
+        m=$(kdc_issue_lines "$hl" | tail -5)
         [[ -n "$m" ]] || continue
         echo "  -- $(basename "$hl")"
         printf '%s\n' "$m" | cut -c1-220 | sed 's/^/     /'
@@ -4972,7 +5505,7 @@ if [[ -f "$ZIP_FILE" ]]; then
     echo -e "  LUKS:        ${BLUE}${_luks}${NC}"
     echo -e "  Nuke:        ${BLUE}${_nuke}${NC}"
     # tor@default.service is the real daemon; tor.service is the /bin/true master.
-    echo -e "  Tor:         ${BLUE}$(systemctl is-active tor@default.service 2>/dev/null || echo 'unknown')${NC}"
+    echo -e "  Tor:         ${BLUE}$(kdc_unit_state is-active tor@default.service)${NC}"
     echo ""
 fi
 

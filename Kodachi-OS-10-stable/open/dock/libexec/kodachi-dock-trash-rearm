@@ -146,6 +146,22 @@ class Broken(Exception):
     """A broken install rather than a state this helper is meant to repair."""
 
 
+def _exc_detail(exc):
+    """Render a WIDELY caught exception as "Name: text", never raising.
+
+    The same guard kodachi-command-window and kodachi-repo-manager carry. The
+    two D-Bus handlers below catch `Exception` (GLib.Error and friends), and
+    `"%s" % exc` calls the exception's `__str__`: one whose `__str__` raises
+    would replace the Broken diagnosis with a traceback from inside the handler,
+    and a MemoryError formats as the empty string. The class name is always
+    safe to read; the text is attempted separately and dropped if it misbehaves.
+    """
+    try:
+        return "%s: %s" % (type(exc).__name__, exc)
+    except BaseException:
+        return type(exc).__name__
+
+
 # ── output ───────────────────────────────────────────────────────────────
 #
 # THE HEALTHY PATH PRINTS NOTHING, AND A LOG LEVEL WILL NOT DO IT FOR YOU. This
@@ -217,7 +233,7 @@ def process_age_s(pid):
     # fixed. state is field 3, starttime is field 22, so it is index 19 here.
     fields = stat[stat.rindex(")") + 2:].split()
     start_ticks = int(fields[19])
-    with open("/proc/uptime", encoding="utf-8") as fh:
+    with open("/proc/uptime", encoding="utf-8", errors="replace") as fh:
         uptime = float(fh.read().split()[0])
     return uptime - start_ticks / os.sysconf("SC_CLK_TCK")
 
@@ -239,8 +255,10 @@ def dock_processes():
 
 def read_ss():
     try:
+        # errors="replace": ss -xp prints PROCESS NAMES, which are arbitrary bytes, and
+        # a strict decode would raise UnicodeDecodeError past the Broken handlers below.
         done = subprocess.run(["ss", "-xp"], capture_output=True, text=True,
-                              timeout=SS_TIMEOUT_S)
+                              errors="replace", timeout=SS_TIMEOUT_S)
     except FileNotFoundError as exc:
         raise Broken("ss is not installed (iproute2): %s" % exc) from exc
     except subprocess.TimeoutExpired as exc:
@@ -356,7 +374,7 @@ def save_state(state):
     path = state_path()
     tmp = path + ".new"
     try:
-        with open(tmp, "w", encoding="utf-8") as fh:
+        with open(tmp, "w", encoding="utf-8", errors="replace") as fh:
             json.dump(state, fh)
         os.replace(tmp, path)
         return True
@@ -385,7 +403,7 @@ def can_persist():
     """
     probe = state_path() + ".probe"
     try:
-        with open(probe, "w", encoding="utf-8") as fh:
+        with open(probe, "w", encoding="utf-8", errors="replace") as fh:
             fh.write("{}")
         os.unlink(probe)
         return True
@@ -506,7 +524,7 @@ def _bus():
         # WORST_CASE_S rather than a hair above it.
         return Gio.bus_get_sync(Gio.BusType.SESSION, None), Gio, GLib
     except Exception as exc:  # noqa: BLE001  (GLib.Error and friends)
-        raise Broken("cannot reach the session bus (%s: %s)" % (type(exc).__name__, exc)) from exc
+        raise Broken("cannot reach the session bus (%s)" % _exc_detail(exc)) from exc
 
 
 def _call(method, query):
@@ -519,8 +537,8 @@ def _call(method, query):
         # SEPARATE DIAGNOSES, because one fixed message for every failure is the
         # defect class this project keeps finding: name the method and the real
         # exception rather than always blaming an absent bus name.
-        raise Broken("%s(%r) on %s failed (%s: %s)" % (
-            method, query, BUS_NAME, type(exc).__name__, exc)) from exc
+        raise Broken("%s(%r) on %s failed (%s)" % (
+            method, query, BUS_NAME, _exc_detail(exc))) from exc
 
 
 def applet_is_present():

@@ -529,7 +529,7 @@ dock_run_action() {
         dock_fail "Unknown action: ${category} / ${label}"
 
     local _category _label confirm_flag _handler command_text
-    # G86 (reported by <agent>, 2026-08-23, LATENT: 0 of 640 registry rows and 0
+    # G86 (reported in review, 2026-08-23, LATENT: 0 of 640 registry rows and 0
     # of 82 sidecar rows carry an empty field today). A TAB IS AN IFS WHITESPACE BYTE, so
     # bash COALESCES a run of them: one empty field in the middle of a row and `read`
     # hands every later variable the wrong column. For the registry that means
@@ -722,7 +722,7 @@ dock_run_action() {
 
 # When the window path was TRIED and FAILED for a lengthy answer, say so.
 #
-# BUG-16, <agent>. show_in_window() waits 3s for the window to touch its
+# BUG-16. show_in_window() waits 3s for the window to touch its
 # token and returns 1 otherwise, and the caller then falls through to the
 # notification, whose body is the FIRST SIX LINES. So a forty-line report became
 # six lines with no indication a tail ever existed. That is exactly the data loss
@@ -747,7 +747,7 @@ truncation_notice() {
     #     0: syntax error in expression (error token is "0")
     # `[[ -le ]]` then returns FALSE instead of returning early, so the dock mktemps a
     # spill file it does not need and prints "showing 6 of 0\n0 lines" at the user.
-    # Reported as a class by <agent> against thunar-gpg-sign.sh, where the same
+    # Reported as a class against thunar-gpg-sign.sh, where the same
     # shape fed an `-eq` and silently disabled the whole no-GPG-key guard.
     # `|| total=0` outside the substitution keeps the numeric contract on every path.
     total="$(printf '%s\n' "$output" | clean_output | command grep -c '' 2>/dev/null)" || total=0
@@ -837,7 +837,7 @@ show_in_window() {
     token="$(mktemp "${DOCK_RUNTIME_DIR}/window.XXXXXX")" || return 1
     command find "$token" -delete 2>/dev/null
 
-    # 9>&- IS LOAD BEARING AND IS THE WHOLE OF G77 (reported by <agent>,
+    # 9>&- IS LOAD BEARING AND IS THE WHOLE OF G77 (reported in review,
     # 2026-08-23, and reproduced by them in a plain-bash harness with a control arm).
     #
     # `dock_run_action` holds the single-flight lock on fd 9. `setsid` starts a new
@@ -886,7 +886,7 @@ show_in_window() {
 # BOTH MANDATORY GATES PASSED WITH A TIE PRESENT. `--check` validated that every
 # key resolves; `kodachi-dock-build verify` proved two runs are byte-identical.
 # Neither compares the two files to each other, and a reproducible build of a
-# wrong ordering is still reproducible. <agent> found five collisions in
+# wrong ordering is still reproducible. A reviewer found five collisions in
 # the old 154-launcher dock, and the replacement layout built to FIX that dock
 # reproduced one (Apps and Emergency both at 10). Adding seven more containers
 # for the application groups is exactly the edit that would bring it back, so
@@ -929,7 +929,7 @@ show_in_window() {
 # collision in a screenshot while my gate reported 0 duplicates.
 # IDENTITY IS A TUPLE, AND TWO SINGLE-DIMENSION GATES LEAVE THE HOLE OPEN.
 #
-# <agent>'s generalisation of the duplicate-label finding, and it found
+# A reviewer's generalisation of the duplicate-label finding, and it found
 # something the label and image gates both missed: "Tor Browser (Firejail)" and
 # "Tor Browser Settings" had different labels AND different icons AND ran the
 # byte-identical command `/usr/local/bin/kodachi-tor-browser`. Neither gate can
@@ -1088,7 +1088,7 @@ dock_icon_check() {
     # icon below is re-rooted under it, so a root that is absent or unsearchable makes
     # every `-f` fail and the arm prints one MISSING line per icon plus `0/N exist`.
     # That reads as "the ISO ships no dock icons", a release blocker, and it is an
-    # instrument error. Measured 2026-09-07 by <agent> on a test VM and
+    # instrument error. Measured 2026-09-07 on a test VM and
     # reproduced on the dev host: a root of cairo-dock/usr/local/share/kodachi/dock/icons
     # (absent, and what playbook 33.5 wrongly documented) turned 132/132 into 0/132 with
     # 132 false MISSING lines, while all 132 icons sat present at the absolute paths the
@@ -1267,7 +1267,7 @@ dock_self_check() {
         #
         # Counting them as MISSING made `--check` exit 1 on a CLEAN, correctly
         # built dock, so the gate the playbook makes mandatory could not pass on
-        # the shipped product. Reported by <agent> from the .173 sweep
+        # the shipped product. Reported in review from the .173 sweep
         # (15 rows, 111/126). They are now counted and named exactly the way
         # separators already were, and they no longer sit in the resolve
         # denominator, which was measuring the wrong population: 111/126 reads as

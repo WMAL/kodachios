@@ -272,7 +272,12 @@ case "$FIELD" in
         # refresh at 2s is what made this block vanish for a whole cycle.
         vpn_block="$(conky_gateway_get_multiline_or_default "runtime-detector.conky-vpn" "" 2 "$BIN" 2>/dev/null || true)"
         routing_line="$(build_conky_routing_line "$routing_onoff" "$routing_protocol")"
-        if [[ -n "$vpn_block" ]]; then
+        if conky_runtime_block_is_pending "$vpn_block"; then
+            # Boot placeholder, not a VPN list (conky-gateway-common.sh): keep the routing line,
+            # then one short neutral line instead of the long red "detection did not finish".
+            printf '%s\n' "$routing_line"
+            printf '%s\n' '${voffset 6}${goto 5}${font Liberation Sans Narrow:size=10}${color3}VPN: checking...'
+        elif [[ -n "$vpn_block" ]]; then
             vpn_block="$(rewrite_vpn_block_states_by_routing "$vpn_block")"
             vpn_block="$(insert_line_after_first "$vpn_block" "$routing_line")"
             # Tor status has its own dedicated Conky line; do not duplicate it here.
@@ -285,7 +290,10 @@ case "$FIELD" in
     conky-firewall)
         # Same helper and the same 5s-floor caveat as the conky-vpn arm above.
         firewall_block="$(conky_gateway_get_multiline_or_default "runtime-detector.conky-firewall" "" 2 "$BIN" 2>/dev/null || true)"
-        if [[ -n "$firewall_block" ]]; then
+        if conky_runtime_block_is_pending "$firewall_block"; then
+            # Boot placeholder, not a firewall reading (conky-gateway-common.sh): one short neutral line.
+            printf '%s\n' '${voffset 6}${goto 5}${font Liberation Sans Narrow:size=10}${color3}Firewall: checking...'
+        elif [[ -n "$firewall_block" ]]; then
             printf '%s\n' "$firewall_block" | sed -E 's/Liberation Sans Narrow:size=(8|9)\}/Liberation Sans Narrow:size=10}/g' | normalize_onoff_text
         fi
         ;;
