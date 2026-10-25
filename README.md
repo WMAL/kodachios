@@ -82,12 +82,12 @@ Kodachi asks for a lot of trust. These exist so you do not have to give it blind
 | | |
 |---|---|
 | **[Technical Whitepaper](https://kodachi.cloud/tools/whitepaper.html)** | How the whole platform actually works: Rust services, routing, Tor, DNS, hardening, VPS fleet, the RSA-4096 + BLAKE3 signing chain, and an honest threat model including what Kodachi does **not** protect against. |
-| **[Architecture , the rack](https://kodachi.cloud/tools/architecture.html)** | An animated command centre: hover a unit to trace its cables, click to pin the detail. 17 signed Rust services, 8 AI binaries, 11 routing protocols, and the link between your device and the cloud fleet, with live platform counters. |
+| **[Architecture , the rack](https://kodachi.cloud/tools/architecture.html)** | An animated command centre: hover a unit to trace its cables, click to pin the detail. 18 signed Rust services, 8 AI binaries, 14 routing protocols, and the link between your device and the cloud fleet, with live platform counters. |
 | **[Development Activity](https://kodachi.cloud/tools/architecture.html#activity)** | The live build ledger. What is being worked on right now, as it happens. |
 | **[Knowledge Graph](https://kodachi.cloud/tools/architecture.html#graph)** | A live map of how every part of Kodachi connects to every other part. |
 | **[Command Library](https://kodachi.cloud/tools/command-library.html)** | Every signed CLI command, searchable by binary, by name, or by plain-language goal such as "erase logs". Destructive commands are flagged. Nothing executes. |
-| **[Workflow Simulator](https://kodachi.cloud/tools/workflow-simulator.html)** | Watch a real Kodachi workflow run without running it: control travels a circuit diagram step by step while each command streams sample output. 113 workflows across 13 subsystems, from torrification to the emergency kill switch. |
-| **[Dashboard Gallery](https://kodachi.cloud/docs/gallery.html)** | 53 annotated screenshots of the real control plane, captured on a live system. Filter by topic or play it as a reel. See it before you install it. |
+| **[Workflow Simulator](https://kodachi.cloud/tools/workflow-simulator.html)** | Watch a real Kodachi workflow run without running it: control travels a circuit diagram step by step while each command streams sample output. 122 workflows across 14 subsystems, from torrification to the emergency kill switch. |
+| **[Dashboard Gallery](https://kodachi.cloud/docs/gallery.html)** | 62 annotated screenshots of the real control plane, captured on a live system. Filter by topic or play it as a reel. See it before you install it. |
 | **[Binary Documentation](https://kodachi.cloud/docs/)** | Reference for every service and binary. |
 | **[Warrant Canary](https://kodachi.cloud/tools/warrant.html)** | Current signed statement. |
 
