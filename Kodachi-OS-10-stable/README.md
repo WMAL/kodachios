@@ -40,7 +40,7 @@ authentication and integrity layers, and their source is not published. What you
 their complete command surface: every binary, every command and every flag is documented at
 [kodachi.cloud/docs](https://kodachi.cloud/docs/), with the machine-readable index at
 [`/kp/docs-assets/binaries/command-library.json`](https://kodachi.cloud/kp/docs-assets/binaries/command-library.json)
-(25 binaries, 638 commands).
+(25 binaries, 639 commands).
 
 Also absent by design: the browser profile, any credential or key material, third-party icon
 sets whose licences do not permit redistribution, and internal build tooling.
