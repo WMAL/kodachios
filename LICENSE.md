@@ -28,7 +28,7 @@ This distribution contains **"Kodachi Materials"** authored by the Licensor that
 **Commercial or organizational use requires a written commercial license from the Licensor.**
 **Contact:** warith@digi77.com
 
-This distribution also contains third-party software subject to their own licenses, including Debian packages and other open source projects. See [Third-Party Licenses section](#third-party-licenses-and-attributions) below for the applicable third-party license references.
+This distribution also contains third-party software subject to its own licenses, including Debian packages and other open source projects. The [appendix below](#third-party-licenses-and-attributions) explains where the authoritative per-package notices are installed; it is not a complete public inventory or SBOM.
 
 **Trademarks:** "Kodachi" and related marks are trademarks of Warith Al Maawali. No trademark rights are granted by the license above.
 
@@ -58,7 +58,7 @@ The Licensor makes Kodachi Materials available for learning, research, and Home 
 
 ### 4. Definitions
 
-**4.1 "Kodachi Materials"** means only the elements authored by the Licensor for Kodachi OS and related projects, including source code, scripts, artwork, documentation, and binaries that the Licensor identifies in the NOTICE. It excludes third-party software.
+**4.1 "Kodachi Materials"** means only the elements authored by the Licensor for Kodachi and related projects, including source code, scripts, artwork, documentation, and binaries that the Licensor identifies in the NOTICE. It excludes third-party software.
 
 **4.2 "Home Use"** means personal, noncommercial use by a private individual on devices the individual owns or controls.
 
@@ -90,11 +90,13 @@ c) integrate Kodachi Materials into a product, appliance, or image intended for 
 d) sell, rent, license, or monetize Kodachi Materials or derived works;
 e) remove or alter attribution, trademarks, LICENSE, or NOTICE.
 
-### 8. Premium, Dedicated Plans and Support
+### 8. Premium, Custom Plans and Product Access
 
-Paid Premium and Dedicated plans provide access to enhanced infrastructure and support under separate terms.
+Paid Premium and Custom plans provide access to plan-specific dashboard products, enhanced infrastructure, and support under separate terms.
 
-Purchase of a Premium or Dedicated plan grants Commercial Use rights only as expressly stated in this License and only for the duration of the paid annual license term (12 months from activation), per licensed device and within the scope of the purchased plan.
+Custom plans additionally include direct developer support within the limits published on the pricing page: written channels only (email and private Discord messages; no phone calls, video calls or screen-sharing), a fixed number of support cases per organization per license year, Kodachi issues only, one or two named contacts per organization, provided on a best-effort basis without any service-level guarantee. Custom development and custom builds are quoted separately; third-party software and services, general system administration, and machines not running Kodachi are outside that support.
+
+Purchase of a Premium or Custom plan grants Commercial Use rights only as expressly stated in this License and only for the duration of the paid annual license term (12 months from activation), per licensed device and within the scope of the purchased plan.
 
 ---
 
@@ -104,7 +106,15 @@ Use of Kodachi Materials is governed by this License and the current Kodachi pri
 
 Personal, Home, and other Noncommercial Use is permitted without charge under the Free Plan and remains subject to usage limits and policies defined by the Licensor.
 
-Purchase of a Premium or Dedicated plan constitutes an annual commercial license granting the right to use Kodachi Materials for Commercial Use for a term of 12 months from activation, including all updates released during that term regardless of version number, and only within the scope of the purchased plan.
+The Free Plan includes the purpose-hardened operating-system core, the Lite Classic and Circle dashboards (including the AI Chat, AI Commander, Workflows and Command Builder pages of Lite Classic), the Simple and Direct startup modes, every visual pack plus accessibility and performance controls, one Default preference profile, current-session command history, the kodachi.cloud web tools that are not marked Premium, and access to the normal managed-node pool subject to fair-use limits.
+
+Premium includes the Free Plan capabilities plus the Vitals system monitor, the top-level SOC dashboard, the ColonyOps operations workspace, the Advanced startup mode, the VPN Providers and Mobile Manager pages of Lite Classic, multiple preference profiles, persistent command and execution history, the Premium web tools on kodachi.cloud (Domain Intelligence, DNS Propagation and IP Analytics), and Premium managed-node access. Custom includes the Premium capabilities plus custom-server operations and the dedicated infrastructure described in the purchased plan.
+
+The two lists above describe the plans as of 22 October 2026. The Licensor sets which dashboard products, pages and web tools belong to each plan on its license server and publishes the current allocation in the plan comparison at https://kodachi.cloud/docs/support.html#plans, which signed-in Kodachi dashboards and kodachi.cloud apply. Where that published comparison differs from the lists above, the published comparison governs plan entitlements. A change to plan entitlements never narrows the software-use grant in Section 5.
+
+These plan-specific product and service entitlements are distinct from the underlying permission to download, install, run, back up, or privately modify Kodachi Materials for Home or other Noncommercial Use under Section 5.
+
+Purchase of a Premium or Custom plan constitutes an annual commercial license granting the right to use Kodachi Materials for Commercial Use for a term of 12 months from activation, including all updates released during that term regardless of version number, and only within the scope of the purchased plan.
 
 Upon expiration of the 12-month license term, the commercial license granted under that plan immediately ends unless renewed. Continued Commercial Use after expiration requires a new or renewed annual license.
 
@@ -116,6 +126,8 @@ Donations do not constitute a commercial license and do not grant Commercial Use
 
 Paid plans may include access to shared, low-density, or dedicated infrastructure operated by or on behalf of the Licensor.
 
+Managed-node, Premium-pool, and custom-server access is authorized by the Licensor's servers for each request or session. A locally displayed tier, modified application, or locally stored file does not by itself grant access to those server resources.
+
 Infrastructure access is provided on a best-effort basis and does not modify, replace, or extend the disclaimers, limitations of liability, or absence of warranties defined in this License.
 
 No uptime guarantees, performance guarantees, or service level agreements are provided unless explicitly agreed in writing.
@@ -126,13 +138,25 @@ No uptime guarantees, performance guarantees, or service level agreements are pr
 
 The Free Plan is intended solely for Home and other Noncommercial Use and may be subject to reasonable usage limits, including daily time limits, resource allocation policies, or fair-use controls.
 
-Such limits do not restrict features or functionality of the Kodachi Materials but apply only to access conditions and infrastructure usage.
+The Free Plan remains a functional privacy and security operating system. Fair-use limits may apply to shared infrastructure, while the plan-specific dashboard products, web tools, persistence features, and server resources listed in Section 8A require the corresponding entitlement. Those product tiers do not narrow the software-use grant in Section 5.
 
 ---
 
 ## 8D. Order of Precedence
 
 In the event of any inconsistency between this License and pricing descriptions, plan summaries, or marketing materials, this License shall control with respect to software usage rights, while the pricing terms shall control with respect to billing and infrastructure access.
+
+---
+
+## 8E. Dashboard Entitlement Verification
+
+After a valid Premium or Custom key is activated, the dashboard may store a short-lived cryptographically signed entitlement claim bound to the licensed device. On later starts, the dashboard verifies a fresh claim from the Licensor's server and may unlock the applicable plan automatically without requiring the key to be entered again.
+
+A missing, expired, altered, wrong-device, or otherwise invalid claim is treated as Free. A signed claim expires no later than seven days after issuance and never beyond the paid license term, and the dashboard does not unlock paid features from a stored claim alone: a running dashboard holds a verified answer through about half an hour of lost contact with the Licensor's server, and a dashboard that starts without that contact shows the Free set until it signs in again. An authoritative inactive, revoked, released, blocked, or expired status removes paid local access on the next successful status check.
+
+The signed local claim is designed to prevent ordinary local-file editing from granting paid access. It is not a guarantee against modification of the application by a person with administrative or root control of the device. Server-authorized resources remain independently enforced as stated in Section 8B.
+
+Plan-specific dashboard capabilities are enforced by the signed dashboard releases of Kodachi 10 and later. The allocation of capabilities to plans travels in the signed claim, so a dashboard signed in to the Licensor's server applies a change to the allocation published under Section 8A within about ten minutes, without a software update.
 
 ### 9. Third-Party Software
 
@@ -152,7 +176,7 @@ Where the Licensor has a reasonable basis to believe Commercial Use is occurring
 
 ### 13. Privacy and Telemetry
 
-Kodachi may check for updates. No personal data is collected without consent. See the applicable Privacy Policy.
+Kodachi may check for updates. No conventional Kodachi account fields such as name, email, or phone number are required, while requests can still process network, session, device, and client metadata needed for service operation. See the applicable Privacy Policy.
 
 ### 14. Term and Termination
 
@@ -178,6 +202,8 @@ To obtain Commercial Use rights, contact: **warith@digi77.com**
 
 This License is the complete agreement for Kodachi Materials authored by the Licensor. If there is a conflict between this License and third-party open source licenses bundled with Kodachi distributions, the third-party licenses control for their respective components only.
 
+---
+
 ## Separate Screenshot and Promotional Media License Grant
 
 Notwithstanding any conflicting term of KSAN-1.1, the Licensor licenses under the Creative Commons Attribution-ShareAlike 4.0 International License (CC BY-SA 4.0) all Kodachi-authored visual content as displayed in screenshots of unmodified Kodachi OS interfaces, and official Kodachi OS promotional images published by the Licensor on kodachi.cloud.
@@ -188,11 +214,12 @@ Third-party content remains governed by its own license. No patent or trademark 
 
 This is a separate additional license grant and does not otherwise modify KSAN-1.1.
 
+
 ---
 
 ## Third-Party Licenses and Attributions
 
-Kodachi OS includes third-party software components subject to their own licenses. This section documents those components and their applicable licenses.
+Kodachi OS includes third-party software components subject to their own licenses. This appendix is a disclosure guide, not a complete component inventory or complete attribution list.
 
 ### Debian Base System
 
@@ -202,13 +229,11 @@ Kodachi is built on Debian GNU/Linux. Debian packages and components are governe
 - **LGPL** for libraries
 - Various other open source licenses
 
-For detailed Debian licensing information, see: https://www.debian.org/legal/licenses/
+On an installed system, Debian package copyright and license notices are stored under `/usr/share/doc/<package>/copyright`. For Debian licensing guidance, see https://www.debian.org/legal/licenses/
 
 ### Third-Party Components
 
-**The following third-party software is included:**
-
-Kodachi bundles standard Debian packages plus additional open source components. The complete, authoritative per-package copyright notices and license texts for every installed component are provided on the running system under `/usr/share/doc/<package>/copyright` and via each package's own metadata. These upstream licenses remain in full force and prevail over this License for their respective components.
+A complete public package-by-package attribution inventory is not currently published on this page. Consult the installed package copyright files and the source distribution for the authoritative notices that ship with each component. Do not treat this appendix as an SBOM. These upstream licenses remain in full force and prevail over this License for their respective components.
 
 ### Common Open Source Licenses
 
